@@ -1,0 +1,14 @@
+project_root/
+├── main.py                 # 程序入口，主控制循环
+├── config.py               # 配置管理（Config 类）
+├── utils.py                # 通用工具（ThrottledPrinter）
+├── recoil.py               # 压枪补偿（RecoilCompensator）
+├── input_listener.py       # 唤醒/触发模块（WakeUpModule）
+├── screen_capture.py       # 屏幕捕获（ScreenCapture）
+├── detection.py            # 目标检测（TargetDetector）
+├── aim_calculator.py       # 瞄准点计算（AimPointCalculator）
+├── mouse_control.py        # 鼠标控制（MouseController + 底层函数）
+├── throttle.py             # 吸附节流（Throttle）
+├── debug_visualizer.py     # 调试可视化（DebugVisualizer）
+├── config.json             # 用户配置文件（自动生成/读取）
+└── recoil_profile.json     # 后坐力曲线文件

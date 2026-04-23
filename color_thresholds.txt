@@ -1,0 +1,6 @@
+R_MIN = 96
+R_MAX = 226
+G_MIN = 91
+G_MAX = 255
+B_MIN = 0
+B_MAX = 164

@@ -1,6 +1,6 @@
 {
-    "roi_width": 330,
-    "roi_height": 270,
+    "roi_width": 410,
+    "roi_height": 315,
     "capture_fps": 30,
     "gaussian_ksize": 5,
     "canny_sigma": 0.33,
@@ -16,6 +16,7 @@
     "adsorb_prob": 0.8,
     "cycle_duration": 2.0,
     "active_duration": 0.5,
+    "enable_time_throttle": true,
     "max_step_pixels": 10,
     "unlock_distance": 50,
     "aim_jitter_radius": 3,
@@ -23,7 +24,11 @@
     "firing_follow_x": 0.45,
     "firing_follow_y": 0.65,
     "firing_vertical_boost": 1.6,
-    "enable_time_throttle": true,
     "recoil_enabled": true,
-    "recoil_profile_path": "recoil_profile.json"
+    "recoil_profile_path": "recoil_profile.json",
+    "yolo_model_path": "models/best.pt",
+    "yolo_conf_threshold": 0.5,
+    "yolo_iou_threshold": 0.45,
+    "yolo_device": "cpu",
+    "yolo_skip_frames": 1
 }

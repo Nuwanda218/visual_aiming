@@ -1,14 +1,21 @@
 # -*- coding: utf-8 -*-
-import math
-import cv2
-import numpy as np
+from dataclasses import dataclass
 from typing import Optional, Tuple
-from config import Config
 
+import numpy as np
+from ultralytics import YOLO
+
+from resource_path import resource_path
+
+BBox = Tuple[int, int, int, int]
+
+
+@dataclass
 class DetectedTarget:
-    def __init__(self, contour: Optional[np.ndarray], bbox: Tuple[int, int, int, int]):
-        self.contour = contour
-        self.bbox = bbox
+    """Detection result in ROI coordinates: (x, y, width, height)."""
+
+    bbox: BBox
+    confidence: float = 0.0
 
     @property
     def x(self) -> int:
@@ -28,157 +35,143 @@ class DetectedTarget:
 
     @property
     def center_x(self) -> int:
-        return self.bbox[0] + self.bbox[2] // 2
+        return self.x + self.w // 2
 
     @property
     def center_y(self) -> int:
-        return self.bbox[1] + self.bbox[3] // 2
+        return self.y + self.h // 2
 
     @property
     def aspect_ratio(self) -> float:
-        return self.bbox[3] / self.bbox[2] if self.bbox[2] > 0 else 0
+        return self.h / self.w if self.w > 0 else 0.0
 
     @property
-    def area(self) -> float:
-        if self.contour is not None:
-            return cv2.contourArea(self.contour)
-        return self.bbox[2] * self.bbox[3]
+    def area(self) -> int:
+        return self.w * self.h
+
 
 class TargetDetector:
-    # 人物颜色 RGB 范围（基于调试工具的最佳参数）
-    PERSON_R_MIN = 96
-    PERSON_R_MAX = 226
-    PERSON_G_MIN = 91
-    PERSON_G_MAX = 255
-    PERSON_B_MIN = 0
-    PERSON_B_MAX = 164
+    """
+    YOLOv8 detector.
 
-    # 绿色瞄准标记 RGB 范围（用于剔除）
-    GREEN_R_MIN = 50
-    GREEN_R_MAX = 80
-    GREEN_G_MIN = 200
-    GREEN_G_MAX = 255
-    GREEN_B_MIN = 100
-    GREEN_B_MAX = 150
+    Backward-compatible class API:
+        TargetDetector().detect(frame, config, roi_center=None) -> DetectedTarget | None
+
+    Simple module API:
+        detection.detect(frame, config) -> (xc, yc, w, h) | None
+    """
 
     def __init__(self):
-        self.debug_window = False
+        self.model = None
+        self.model_path = None
+        self.device = None
+        self.frame_count = 0
+        self.last_result: Optional[DetectedTarget] = None
 
     def set_debug(self, enabled: bool):
-        self.debug_window = enabled
-        if enabled:
-            cv2.namedWindow("Debug - Detection", cv2.WINDOW_NORMAL)
-            cv2.setWindowProperty("Debug - Detection", cv2.WND_PROP_TOPMOST, 1)
-            # 设置窗口位置到屏幕 (10, 1470)，大小保持 50%
-            scale = 0.5  # 缩小到 50%
-            window_width = int(410 * 2 * scale)  # ROI 宽度 * 2 * 缩放比例
-            window_height = int(315 * scale)  # ROI 高度 * 缩放比例
-            
-            # 左下角对准 (10, 1470) 像素位置
-            x = 10  # 左边距
-            y = 1470-197  # 底边距（窗口左下角）
-            
-            cv2.moveWindow("Debug - Detection", x, y)
-            cv2.resizeWindow("Debug - Detection", window_width, window_height)
+        # Kept for compatibility. Debug drawing is handled by DebugVisualizer.
+        return None
 
-    def detect(self, frame_bgr: np.ndarray, config: Config,
-               roi_center: Tuple[int, int]) -> Optional[DetectedTarget]:
-        """
-        基于固定 RGB 阈值检测人物轮廓。
-        """
-        # 分离 BGR 通道
-        b, g, r = cv2.split(frame_bgr)
+    def load_model(self, model_path: str, device: str = "cpu"):
+        resolved_path = resource_path(model_path)
+        print(f"[YOLO] 加载模型: {resolved_path} | device={device}")
+        self.model = YOLO(resolved_path)
+        self.model.to(device)
+        self.model_path = model_path
+        self.device = device
+        print("[YOLO] 模型加载完成")
 
-        # 生成人物 mask（满足 RGB 范围）
-        person_mask = ((r >= self.PERSON_R_MIN) & (r <= self.PERSON_R_MAX) &
-                       (g >= self.PERSON_G_MIN) & (g <= self.PERSON_G_MAX) &
-                       (b >= self.PERSON_B_MIN) & (b <= self.PERSON_B_MAX)).astype(np.uint8) * 255
-
-        # 调试：计算 mask 中白色像素数量
-        white_pixels = cv2.countNonZero(person_mask)
-        total_pixels = person_mask.shape[0] * person_mask.shape[1]
-        print(f"[DEBUG] 人物 mask: {white_pixels}/{total_pixels} 像素 ({white_pixels/total_pixels*100:.1f}%)")
-
-        # 剔除绿色瞄准标记（覆盖在人物身上的绿色圈）
-        green_mask = ((r >= self.GREEN_R_MIN) & (r <= self.GREEN_R_MAX) &
-                      (g >= self.GREEN_G_MIN) & (g <= self.GREEN_G_MAX) &
-                      (b >= self.GREEN_B_MIN) & (b <= self.GREEN_B_MAX)).astype(np.uint8) * 255
-        person_mask = cv2.bitwise_and(person_mask, cv2.bitwise_not(green_mask))
-
-        # 形态学处理：闭运算填充空洞，开运算去除噪声
-        kernel = np.ones((config.morph_kernel_size, config.morph_kernel_size), np.uint8)
-        person_mask = cv2.morphologyEx(person_mask, cv2.MORPH_CLOSE, kernel)
-        person_mask = cv2.morphologyEx(person_mask, cv2.MORPH_OPEN, kernel)
-
-        # 中值滤波去除孤立噪点
-        person_mask = cv2.medianBlur(person_mask, 3)
-
-        # 查找轮廓
-        contours, _ = cv2.findContours(person_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        print(f"[DEBUG] 找到轮廓数量: {len(contours)}")
-        if not contours:
-            if self.debug_window:
-                self._show_debug(frame_bgr, person_mask, [], None)
+    def detect(
+        self,
+        frame_bgr: np.ndarray,
+        config,
+        roi_center: Optional[Tuple[int, int]] = None,
+    ) -> Optional[DetectedTarget]:
+        if frame_bgr is None:
             return None
 
-        # 轮廓筛选：面积和宽高比
-        min_area = max(50, config.min_contour_area)  # 进一步降低最小面积阈值
-        max_area = config.roi_width * config.roi_height * 0.8
-        valid_targets = []
-        for i, c in enumerate(contours):
-            area = cv2.contourArea(c)
-            x, y, w, h = cv2.boundingRect(c)
-            aspect_ratio = h / w if w > 0 else 0
-            print(f"[DEBUG] 轮廓 {i}: 面积={area:.1f}, 宽高比={aspect_ratio:.2f}, 位置=({x},{y},{w},{h})")
-            if min_area <= area <= max_area:
-                if 0.1 <= aspect_ratio <= 3.0:  # 进一步放宽宽高比范围
-                    valid_targets.append(DetectedTarget(c, (x, y, w, h)))
+        self._ensure_model(config)
 
-        print(f"[DEBUG] 有效目标数量: {len(valid_targets)}")
-        if not valid_targets:
-            if self.debug_window:
-                self._show_debug(frame_bgr, person_mask, contours, None)
+        self.frame_count += 1
+        skip_frames = max(0, int(getattr(config, "yolo_skip_frames", 0)))
+        if skip_frames > 0 and self.last_result is not None:
+            if (self.frame_count - 1) % (skip_frames + 1) != 0:
+                return self.last_result
+
+        conf_threshold = float(getattr(config, "yolo_conf_threshold", 0.5))
+        iou_threshold = float(getattr(config, "yolo_iou_threshold", 0.45))
+
+        try:
+            results = self.model(
+                frame_bgr,
+                conf=conf_threshold,
+                iou=iou_threshold,
+                verbose=False,
+            )
+        except Exception as exc:
+            print(f"[YOLO] 推理失败: {exc}")
+            self.last_result = None
             return None
 
-        # 选择离 ROI 中心（准星位置）最近的轮廓
-        cx_center, cy_center = roi_center
+        boxes = results[0].boxes if results else None
+        if boxes is None or len(boxes) == 0:
+            self.last_result = None
+            return None
+
+        if roi_center is None:
+            h, w = frame_bgr.shape[:2]
+            roi_center = (w // 2, h // 2)
+
+        best_target = self._select_best_box(boxes, roi_center)
+        self.last_result = best_target
+        return best_target
+
+    def detect_bbox(
+        self,
+        frame_bgr: np.ndarray,
+        config,
+        roi_center: Optional[Tuple[int, int]] = None,
+    ) -> Optional[BBox]:
+        target = self.detect(frame_bgr, config, roi_center)
+        return target.bbox if target is not None else None
+
+    def _ensure_model(self, config):
+        model_path = getattr(config, "yolo_model_path", "models/best.pt")
+        device = getattr(config, "yolo_device", "cpu")
+        if self.model is None or self.model_path != model_path or self.device != device:
+            self.load_model(model_path, device)
+
+    def _select_best_box(self, boxes, roi_center: Tuple[int, int]) -> Optional[DetectedTarget]:
+        roi_cx, roi_cy = roi_center
         best_target = None
-        best_dist = float('inf')
-        for target in valid_targets:
-            dist = (target.center_x - cx_center) ** 2 + (target.center_y - cy_center) ** 2
-            if dist < best_dist:
-                best_dist = dist
-                best_target = target
+        best_score = None
 
-        if self.debug_window:
-            self._show_debug(frame_bgr, person_mask, [t.contour for t in valid_targets], best_target)
+        for box in boxes:
+            x1, y1, x2, y2 = box.xyxy[0].detach().cpu().numpy().tolist()
+            x = max(0, int(round(x1)))
+            y = max(0, int(round(y1)))
+            w = max(0, int(round(x2 - x1)))
+            h = max(0, int(round(y2 - y1)))
+            if w <= 0 or h <= 0:
+                continue
+
+            confidence = float(box.conf[0].detach().cpu().item())
+            cx = x + w // 2
+            cy = y + h // 2
+            distance_sq = (cx - roi_cx) ** 2 + (cy - roi_cy) ** 2
+
+            # Prefer the target nearest to the ROI center, then higher confidence.
+            score = (distance_sq, -confidence)
+            if best_score is None or score < best_score:
+                best_score = score
+                best_target = DetectedTarget((x, y, w, h), confidence)
 
         return best_target
 
-    def _show_debug(self, frame: np.ndarray, mask: np.ndarray, contours: list, target: Optional[DetectedTarget]):
-        """显示调试窗口"""
-        # 创建调试图像
-        debug_img = frame.copy()
-        
-        # 显示 mask（转换为彩色）
-        mask_color = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-        mask_color = cv2.resize(mask_color, (debug_img.shape[1], debug_img.shape[0]))
-        
-        # 水平拼接原始图像和 mask
-        combined = np.hstack((debug_img, mask_color))
-        
-        # 绘制所有轮廓
-        for i, c in enumerate(contours):
-            x, y, w, h = cv2.boundingRect(c)
-            cv2.drawContours(combined, [c], -1, (0, 255, 0), 2)
-            cv2.putText(combined, f"C{i}", (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-        
-        # 绘制最佳目标
-        if target is not None:
-            x, y, w, h = target.bbox
-            cv2.rectangle(combined, (x, y), (x+w, y+h), (0, 0, 255), 2)
-            cv2.putText(combined, "Target", (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-        
-        # 显示
-        cv2.imshow("Debug - Detection", combined)
-        cv2.waitKey(1)
+
+_default_detector = TargetDetector()
+
+
+def detect(frame_bgr: np.ndarray, config) -> Optional[BBox]:
+    """Simple public interface: return (x, y, width, height) in ROI coordinates."""
+    return _default_detector.detect_bbox(frame_bgr, config)

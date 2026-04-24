@@ -17,6 +17,7 @@ class Config:
     max_attempts: int = 30
     head_bias: float = 0.25
     aim_smooth_factor: float = 0.7
+    aim_target_preference: float = 0.85
 
     recoil_smooth_factor: float = 0.3
     recoil_max_step: int = 15
@@ -35,6 +36,9 @@ class Config:
     firing_follow_x: float = 0.45
     firing_follow_y: float = 0.65
     firing_vertical_boost: float = 1.6
+    firing_bypass_throttle: bool = True
+    firing_yolo_skip_frames: int = 0
+    firing_hold_last_aim: bool = True
 
     recoil_enabled: bool = True
     recoil_profile_path: str = "recoil_profile.json"
@@ -46,7 +50,11 @@ class Config:
     yolo_half: bool = True
     yolo_head_class_id: int = 0
     yolo_person_class_id: int = 1
-    yolo_skip_frames: int = 0
+    yolo_skip_frames: int = 1
+    yolo_imgsz: int = 416
+    yolo_preload: bool = False
+    debug_enabled: bool = False
+    debug_log_enabled: bool = False
     debug_window_scale: float = 1.6
 
     def load(self, path: str):

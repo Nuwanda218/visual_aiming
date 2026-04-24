@@ -13,6 +13,7 @@ class AimPointCalculator:
         self._velocity = (0, 0)
         self.smooth_factor = getattr(config, 'aim_smooth_factor', 0.7)
         self.head_bias = getattr(config, 'head_bias', 0.25)
+        self.aim_target_preference = self._clamp_preference(getattr(config, 'aim_target_preference', 1.0))
         self.max_step_pixels = max(1, int(getattr(config, 'max_step_pixels', 10)))
         self.unlock_distance = max(0, int(getattr(config, 'unlock_distance', 50)))
         self.max_track_lost = max(0, int(getattr(config, 'max_track_lost', 5)))
@@ -110,9 +111,9 @@ class AimPointCalculator:
             x, y, w, h = target.bbox
             cx = x + w // 2
             if self._is_head_target(target):
-                cy = y + h // 2
+                cy = y + int(h * self._get_head_box_bias())
             else:
-                cy = y + int(h * self.head_bias)
+                cy = y + int(h * self._get_person_box_bias())
 
             aim_x = roi_left + cx
             aim_y = roi_top + cy
@@ -139,6 +140,18 @@ class AimPointCalculator:
     def _is_head_target(self, target) -> bool:
         head_class_id = int(getattr(self.config, 'yolo_head_class_id', 0))
         return getattr(target, 'class_id', None) == head_class_id or getattr(target, 'class_name', '') == 'head'
+
+    def _get_person_box_bias(self) -> float:
+        body_bias = 0.45
+        return body_bias - (body_bias - self.head_bias) * self.aim_target_preference
+
+    def _get_head_box_bias(self) -> float:
+        head_center_bias = 0.5
+        low_pref_bias = 0.62
+        return head_center_bias + (low_pref_bias - head_center_bias) * (1.0 - self.aim_target_preference)
+
+    def _clamp_preference(self, value) -> float:
+        return max(0.0, min(1.0, float(value)))
 
     def _reset_firing_lock(self):
         self.locked_aim = None

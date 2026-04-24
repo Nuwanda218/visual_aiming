@@ -7,7 +7,7 @@ class ScreenCapture:
     def __init__(self, config, wakeup):
         self.config = config
         self.wakeup = wakeup
-        self.sct = mss.mss()
+        self.sct = mss.MSS()
         self.fail_count = 0
         self.printer = ThrottledPrinter(2.0)
 

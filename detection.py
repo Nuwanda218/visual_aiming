@@ -72,6 +72,7 @@ class TargetDetector:
         self.frame_count = 0
         self.last_result: Optional[DetectedTarget] = None
         self.use_half = False
+        self.preloaded_shape = None
 
     def set_debug(self, enabled: bool):
         # Kept for compatibility. Debug drawing is handled by DebugVisualizer.
@@ -98,6 +99,7 @@ class TargetDetector:
         frame_bgr: np.ndarray,
         config,
         roi_center: Optional[Tuple[int, int]] = None,
+        firing: bool = False,
     ) -> Optional[DetectedTarget]:
         if frame_bgr is None:
             return None
@@ -105,7 +107,10 @@ class TargetDetector:
         self._ensure_model(config)
 
         self.frame_count += 1
-        skip_frames = max(0, int(getattr(config, "yolo_skip_frames", 0)))
+        if firing:
+            skip_frames = max(0, int(getattr(config, "firing_yolo_skip_frames", 0)))
+        else:
+            skip_frames = max(0, int(getattr(config, "yolo_skip_frames", 0)))
         if skip_frames > 0 and self.last_result is not None:
             if (self.frame_count - 1) % (skip_frames + 1) != 0:
                 return self.last_result
@@ -120,6 +125,7 @@ class TargetDetector:
                 frame_bgr,
                 conf=conf_threshold,
                 iou=iou_threshold,
+                imgsz=self._get_inference_imgsz(config),
                 classes=self._get_inference_classes(config),
                 device=self.device,
                 half=self.use_half,
@@ -148,8 +154,9 @@ class TargetDetector:
         frame_bgr: np.ndarray,
         config,
         roi_center: Optional[Tuple[int, int]] = None,
+        firing: bool = False,
     ) -> Optional[BBox]:
-        target = self.detect(frame_bgr, config, roi_center)
+        target = self.detect(frame_bgr, config, roi_center, firing=firing)
         return target.bbox if target is not None else None
 
     def _ensure_model(self, config):
@@ -162,14 +169,41 @@ class TargetDetector:
             or self.requested_device != device
         ):
             self.load_model(model_path, device, use_half)
+            self.preloaded_shape = None
+
+    def preload(self, config, frame_shape: Tuple[int, int, int]):
+        self._ensure_model(config)
+        if self.model is None:
+            return
+
+        normalized_shape = tuple(int(v) for v in frame_shape)
+        if self.preloaded_shape == normalized_shape:
+            return
+
+        warmup_frame = np.zeros(normalized_shape, dtype=np.uint8)
+        try:
+            self.model(
+                warmup_frame,
+                conf=float(getattr(config, "yolo_conf_threshold", 0.5)),
+                iou=float(getattr(config, "yolo_iou_threshold", 0.45)),
+                imgsz=self._get_inference_imgsz(config),
+                classes=self._get_inference_classes(config),
+                device=self.device,
+                half=self.use_half,
+                verbose=False,
+            )
+            self.preloaded_shape = normalized_shape
+            print(
+                f"[YOLO] 模型预热完成 | device={self.device} | "
+                f"imgsz={self._get_inference_imgsz(config)}"
+            )
+        except Exception as exc:
+            print(f"[YOLO] 模型预热失败: {exc}")
 
     def _select_best_box(self, boxes, roi_center: Tuple[int, int], config) -> Optional[DetectedTarget]:
         roi_cx, roi_cy = roi_center
-        head_class_id = int(getattr(config, "yolo_head_class_id", 0))
-        person_class_id = int(getattr(config, "yolo_person_class_id", 1))
-        head_candidates = []
-        person_candidates = []
-        other_candidates = []
+        candidates = []
+        max_distance_sq = max(1, roi_cx * roi_cx + roi_cy * roi_cy)
 
         for box in boxes:
             x1, y1, x2, y2 = box.xyxy[0].detach().cpu().numpy().tolist()
@@ -187,22 +221,15 @@ class TargetDetector:
             cy = y + h // 2
             distance_sq = (cx - roi_cx) ** 2 + (cy - roi_cy) ** 2
 
-            # Prefer the target nearest to the ROI center, then higher confidence.
-            score = (distance_sq, -confidence)
+            score = self._score_target(config, class_id, confidence, distance_sq, max_distance_sq)
             target = DetectedTarget((x, y, w, h), confidence, class_id, class_name)
+            candidates.append((score, target))
 
-            if class_id == head_class_id:
-                head_candidates.append((score, target))
-            elif class_id == person_class_id:
-                person_candidates.append((score, target))
-            else:
-                other_candidates.append((score, target))
+        if not candidates:
+            return None
 
-        for candidates in (head_candidates, person_candidates, other_candidates):
-            if candidates:
-                candidates.sort(key=lambda item: item[0])
-                return candidates[0][1]
-        return None
+        candidates.sort(key=lambda item: item[0])
+        return candidates[0][1]
 
     def _extract_class_names(self) -> Dict[int, str]:
         names = getattr(self.model, "names", {})
@@ -222,6 +249,37 @@ class TargetDetector:
         person_class_id = int(getattr(config, "yolo_person_class_id", 1))
         classes = sorted({head_class_id, person_class_id})
         return classes if classes else None
+
+    def _get_target_preference(self, config) -> float:
+        value = float(getattr(config, "aim_target_preference", 1.0))
+        return max(0.0, min(1.0, value))
+
+    def _score_target(
+        self,
+        config,
+        class_id: Optional[int],
+        confidence: float,
+        distance_sq: int,
+        max_distance_sq: int,
+    ) -> float:
+        preference = self._get_target_preference(config)
+        head_class_id = int(getattr(config, "yolo_head_class_id", 0))
+        person_class_id = int(getattr(config, "yolo_person_class_id", 1))
+
+        normalized_distance = min(1.0, distance_sq / max_distance_sq)
+        confidence_penalty = 1.0 - max(0.0, min(1.0, confidence))
+
+        if class_id == head_class_id:
+            class_penalty = 1.0 - preference
+        elif class_id == person_class_id:
+            class_penalty = preference
+        else:
+            class_penalty = 1.5
+
+        return (class_penalty * 0.60) + (normalized_distance * 0.30) + (confidence_penalty * 0.10)
+
+    def _get_inference_imgsz(self, config) -> int:
+        return max(32, int(getattr(config, "yolo_imgsz", 640)))
 
     def _resolve_runtime_device(self, requested_device: str, allow_half: bool) -> Tuple[str, bool]:
         requested = (requested_device or "auto").strip().lower()

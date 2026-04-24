@@ -15,6 +15,7 @@ from mouse_control import MouseController
 from throttle import Throttle
 from recoil import RecoilCompensator
 from debug_visualizer import DebugVisualizer
+from utils import ThrottledPrinter
 
 def is_admin():
     try:
@@ -35,7 +36,7 @@ def main():
         print(f"[{time.strftime('%H:%M:%S')}] 未找到 config.json，使用默认配置并保存")
         config.save("config.json")
 
-    with mss.mss() as sct:
+    with mss.MSS() as sct:
         screen_width = sct.monitors[1]["width"]
         screen_height = sct.monitors[1]["height"]
     fixed_roi_left = (screen_width - config.roi_width) // 2
@@ -65,21 +66,31 @@ def main():
         print("[压枪] 压枪已禁用")
 
     roi_center = (config.roi_width // 2, config.roi_height // 2)
+    debug_enabled = bool(getattr(config, "debug_enabled", False))
+    debug_log_enabled = bool(getattr(config, "debug_log_enabled", False))
+    debug_printer = ThrottledPrinter(0.5)
     debug_viz = DebugVisualizer(
-        enabled=True,
+        enabled=debug_enabled,
         roi_size=(config.roi_width, config.roi_height),
         window_scale=getattr(config, "debug_window_scale", 1.6),
     )
+    if getattr(config, "yolo_preload", False):
+        detector.preload(config, (config.roi_height, config.roi_width, 3))
 
     print(f"[{time.strftime('%H:%M:%S')}] 程序已启动，按 Ctrl+Q 退出。")
     print("使用方法：同时按住 Shift+右键，然后按下左键 -> 辅助激活 -> 按住左键开始压枪和吸附")
-    print("调试窗口实时显示检测结果，按 ESC 可关闭调试窗口。")
+    if debug_enabled:
+        print("调试窗口实时显示检测结果，按 ESC 可关闭调试窗口。")
+    else:
+        print("调试窗口已关闭，可在 config.json 中将 debug_enabled 设为 true。")
 
     frame_interval = 1.0 / config.capture_fps
     last_time = time.time()
     firing = False
     firing_start_time = 0.0
     last_aim_base = None
+    firing_bypass_throttle = bool(getattr(config, "firing_bypass_throttle", True))
+    firing_hold_last_aim = bool(getattr(config, "firing_hold_last_aim", True))
 
     while not wakeup.should_exit():
         try:
@@ -110,10 +121,15 @@ def main():
                     recoil_comp.stop_firing()
                 print(f"[{time.strftime('%H:%M:%S')}] 压枪停止")
 
-            if throttle.allow():
+            if firing and firing_bypass_throttle:
+                should_detect = True
+            else:
+                should_detect = throttle.allow()
+
+            if should_detect:
                 frame = screen.grab()
                 if frame is not None:
-                    target = detector.detect(frame, config, roi_center)
+                    target = detector.detect(frame, config, roi_center, firing=firing)
                     roi_offset = wakeup.get_roi_offset()
                     calibrate_point = wakeup.get_crosshair()
                     aim_base = None
@@ -123,25 +139,33 @@ def main():
                         aim_base = aim_calc.calculate(target, roi_left, roi_top)
 
                         if target is not None:
-                            print(
-                                f"[DEBUG] 检测到目标 class={target.class_name} "
-                                f"(id={target.class_id}) bbox={target.bbox} conf={target.confidence:.2f}"
-                            )
+                            if debug_log_enabled:
+                                debug_printer.print(
+                                    "target_detected",
+                                    f"[DEBUG] 检测到目标 class={target.class_name} "
+                                    f"(id={target.class_id}) bbox={target.bbox} conf={target.confidence:.2f}",
+                                )
                             if aim_base is not None:
                                 last_aim_base = aim_base
-                                print(f"[DEBUG] 瞄准点: {aim_base}")
+                                if debug_log_enabled:
+                                    debug_printer.print("aim_point", f"[DEBUG] 瞄准点: {aim_base}")
                             else:
-                                print(f"[DEBUG] aim_calc 返回 None")
-                                cross = wakeup.get_crosshair()
-                                last_aim_base = cross if cross else get_cursor_pos()
+                                if debug_log_enabled:
+                                    debug_printer.print("aim_none", "[DEBUG] aim_calc 返回 None")
+                                if not (firing and firing_hold_last_aim and last_aim_base is not None):
+                                    cross = wakeup.get_crosshair()
+                                    last_aim_base = cross if cross else get_cursor_pos()
                         else:
-                            print(f"[DEBUG] 未检测到目标")
+                            if debug_log_enabled:
+                                debug_printer.print("target_missing", "[DEBUG] 未检测到目标")
                             if aim_base is not None:
                                 last_aim_base = aim_base
-                                print(f"[DEBUG] 沿用锁定瞄准点: {aim_base}")
+                                if debug_log_enabled:
+                                    debug_printer.print("aim_locked", f"[DEBUG] 沿用锁定瞄准点: {aim_base}")
                             else:
-                                cross = wakeup.get_crosshair()
-                                last_aim_base = cross if cross else get_cursor_pos()
+                                if not (firing and firing_hold_last_aim and last_aim_base is not None):
+                                    cross = wakeup.get_crosshair()
+                                    last_aim_base = cross if cross else get_cursor_pos()
 
                         bbox_for_debug = target.bbox if target is not None else None
                         debug_viz.update(frame, bbox_for_debug, aim_base, calibrate_point, roi_left, roi_top)

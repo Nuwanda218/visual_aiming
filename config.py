@@ -16,6 +16,7 @@ class Config:
 
     max_attempts: int = 30
     head_bias: float = 0.25
+    aim_smooth_factor: float = 0.7
 
     recoil_smooth_factor: float = 0.3
     recoil_max_step: int = 15
@@ -41,8 +42,12 @@ class Config:
     yolo_model_path: str = "models/best.pt"
     yolo_conf_threshold: float = 0.5
     yolo_iou_threshold: float = 0.45
-    yolo_device: str = "cpu"
-    yolo_skip_frames: int = 1
+    yolo_device: str = "auto"
+    yolo_half: bool = True
+    yolo_head_class_id: int = 0
+    yolo_person_class_id: int = 1
+    yolo_skip_frames: int = 0
+    debug_window_scale: float = 1.6
 
     def load(self, path: str):
         with open(path, 'r', encoding='utf-8') as f:

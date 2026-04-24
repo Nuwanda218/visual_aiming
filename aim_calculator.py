@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 import math
-import cv2
-import numpy as np
 from typing import Optional, Tuple
-from detection import DetectedTarget
+
 
 class AimPointCalculator:
     def __init__(self, config):
@@ -14,9 +12,7 @@ class AimPointCalculator:
         self._prev_aim_global = None
         self._velocity = (0, 0)
         self.smooth_factor = getattr(config, 'aim_smooth_factor', 0.7)
-        self.max_move_per_frame = getattr(config, 'aim_max_move_per_frame', 50)
         self.head_bias = getattr(config, 'head_bias', 0.25)
-        self.adaptive_head_bias = getattr(config, 'adaptive_head_bias', True)
         self.max_step_pixels = max(1, int(getattr(config, 'max_step_pixels', 10)))
         self.unlock_distance = max(0, int(getattr(config, 'unlock_distance', 50)))
         self.max_track_lost = max(0, int(getattr(config, 'max_track_lost', 5)))
@@ -113,7 +109,10 @@ class AimPointCalculator:
         try:
             x, y, w, h = target.bbox
             cx = x + w // 2
-            cy = y + int(h * self.head_bias)
+            if self._is_head_target(target):
+                cy = y + h // 2
+            else:
+                cy = y + int(h * self.head_bias)
 
             aim_x = roi_left + cx
             aim_y = roi_top + cy
@@ -123,6 +122,7 @@ class AimPointCalculator:
 
     def _smooth_aim(self, raw_aim: Tuple[int, int]) -> Tuple[int, int]:
         if self._prev_aim_global is None:
+            self._prev_aim_global = raw_aim
             return raw_aim
 
         factor = self.smooth_factor
@@ -132,7 +132,13 @@ class AimPointCalculator:
         smooth_x = int(prev_x + (raw_x - prev_x) * factor)
         smooth_y = int(prev_y + (raw_y - prev_y) * factor)
 
-        return (smooth_x, smooth_y)
+        smoothed = (smooth_x, smooth_y)
+        self._prev_aim_global = smoothed
+        return smoothed
+
+    def _is_head_target(self, target) -> bool:
+        head_class_id = int(getattr(self.config, 'yolo_head_class_id', 0))
+        return getattr(target, 'class_id', None) == head_class_id or getattr(target, 'class_name', '') == 'head'
 
     def _reset_firing_lock(self):
         self.locked_aim = None

@@ -65,7 +65,11 @@ def main():
         print("[压枪] 压枪已禁用")
 
     roi_center = (config.roi_width // 2, config.roi_height // 2)
-    debug_viz = DebugVisualizer(enabled=True, roi_size=(config.roi_width, config.roi_height))
+    debug_viz = DebugVisualizer(
+        enabled=True,
+        roi_size=(config.roi_width, config.roi_height),
+        window_scale=getattr(config, "debug_window_scale", 1.6),
+    )
 
     print(f"[{time.strftime('%H:%M:%S')}] 程序已启动，按 Ctrl+Q 退出。")
     print("使用方法：同时按住 Shift+右键，然后按下左键 -> 辅助激活 -> 按住左键开始压枪和吸附")
@@ -119,7 +123,10 @@ def main():
                         aim_base = aim_calc.calculate(target, roi_left, roi_top)
 
                         if target is not None:
-                            print(f"[DEBUG] 检测到目标 bbox={target.bbox} conf={target.confidence:.2f}")
+                            print(
+                                f"[DEBUG] 检测到目标 class={target.class_name} "
+                                f"(id={target.class_id}) bbox={target.bbox} conf={target.confidence:.2f}"
+                            )
                             if aim_base is not None:
                                 last_aim_base = aim_base
                                 print(f"[DEBUG] 瞄准点: {aim_base}")

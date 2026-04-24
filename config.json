@@ -8,6 +8,7 @@
     "morph_kernel_size": 3,
     "max_attempts": 30,
     "head_bias": 0.25,
+    "aim_smooth_factor": 0.7,
     "recoil_smooth_factor": 0.3,
     "recoil_max_step": 15,
     "jitter_range": 5.0,
@@ -19,7 +20,6 @@
     "enable_time_throttle": true,
     "max_step_pixels": 10,
     "unlock_distance": 50,
-    "aim_jitter_radius": 3,
     "max_track_lost": 5,
     "firing_follow_x": 0.45,
     "firing_follow_y": 0.65,
@@ -29,6 +29,10 @@
     "yolo_model_path": "models/best.pt",
     "yolo_conf_threshold": 0.5,
     "yolo_iou_threshold": 0.45,
-    "yolo_device": "cpu",
-    "yolo_skip_frames": 1
+    "yolo_device": "auto",
+    "yolo_half": true,
+    "yolo_head_class_id": 0,
+    "yolo_person_class_id": 1,
+    "yolo_skip_frames": 0,
+    "debug_window_scale": 0.7
 }

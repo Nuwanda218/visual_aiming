@@ -16,11 +16,12 @@ class DebugVisualizer:
         enabled: bool = True,
         window_name: str = "Debug - YOLO ROI",
         roi_size: Tuple[int, int] = (410, 315),
+        window_scale: float = 1.6,
     ):
         self.enabled = enabled
         self.window_name = window_name
         self.window_created = False
-        self.window_scale = 0.5
+        self.window_scale = max(0.25, float(window_scale))
         self.roi_size = roi_size
         if self.enabled:
             self._create_window()
@@ -80,7 +81,7 @@ class DebugVisualizer:
         width = max(1, int(self.roi_size[0] * self.window_scale))
         height = max(1, int(self.roi_size[1] * self.window_scale))
         cv2.resizeWindow(self.window_name, width, height)
-        cv2.moveWindow(self.window_name, 20, 60)
+        cv2.moveWindow(self.window_name, 50, 1185)
         self.window_created = True
 
     def _draw_roi_center(self, image: np.ndarray, width: int, height: int):

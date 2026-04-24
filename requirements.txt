@@ -1,0 +1,4 @@
+ultralytics==8.4.41
+opencv-python==4.13.0.92
+mss==10.2.0
+pynput==1.8.1

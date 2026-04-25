@@ -9,6 +9,7 @@
 │       ├── config.py
 │       ├── detection.py
 │       ├── capture_worker.py
+│       ├── detect_scheduler.py
 │       ├── target_tracker.py
 │       ├── timing.py
 │       ├── aim_calculator.py
@@ -47,6 +48,7 @@
 - Input state: `input_listener.py`
 - Capture: `screen_capture.py`
 - Capture worker: `capture_worker.py`
+- Detection scheduler: `detect_scheduler.py`
 - Target prediction: `target_tracker.py`
 - Timing helpers: `timing.py`
 - Detection: `detection.py`

@@ -50,7 +50,10 @@ python .\main.py
 - `aim_target_preference`: 越接近 `1.0` 越偏向 head，越接近 `0.0` 越偏向 person
 - `target_stickiness`: 目标连续性权重，降低多目标快速切换
 - `capture_thread_enabled`: 启用独立截图线程
+- `runtime_poll_fps`: 主状态轮询/目标喂给频率
 - `detect_fps`: 主检测循环频率，和 `capture_fps` 分开调
+- `firing_detect_fps`: 开火时检测频率
+- `idle_detect_fps`: 已激活但未开火时的空闲检测频率
 - `detect_only_new_frames`: 只对新的截图帧做推理，避免重复跑同一帧
 - `tracker_*`: 轻量目标速度预测参数
 - `servo_*`: 视觉伺服控制参数
@@ -64,6 +67,9 @@ python .\main.py
 
 - `src/visual_aiming/capture_worker.py`
   独立截图线程，缓存最新 ROI 帧，避免截图阻塞检测主循环。
+
+- `src/visual_aiming/detect_scheduler.py`
+  状态化检测调度器，按开火/空闲状态切换检测频率。
 
 - `src/visual_aiming/target_tracker.py`
   轻量速度预测器，使用位置差分、EMA、反向急停重置和小速度清零。

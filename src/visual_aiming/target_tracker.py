@@ -30,6 +30,14 @@ class TargetTracker:
         self.vx = 0.0
         self.vy = 0.0
 
+    def has_track(self) -> bool:
+        return self.last_x is not None and self.last_y is not None and self.last_time is not None
+
+    def has_recent_track(self, now: float, max_age_ms: float) -> bool:
+        if not self.has_track() or self.last_time is None:
+            return False
+        return (now - self.last_time) * 1000.0 <= max(0.0, float(max_age_ms))
+
     def update(self, point: Tuple[int, int], now: float) -> Tuple[int, int]:
         x = float(point[0])
         y = float(point[1])

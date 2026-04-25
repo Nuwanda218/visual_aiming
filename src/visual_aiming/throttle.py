@@ -7,6 +7,7 @@ class Throttle:
     def __init__(self, config):
         self.config = config
         self.cycle_start = time.time()
+        self.last_refill_time = self.cycle_start
         self.tokens = config.active_duration
         self.last_deny_time = 0
         self.printer = ThrottledPrinter(2.0)
@@ -24,13 +25,16 @@ class Throttle:
         elapsed = now - self.cycle_start
         if elapsed >= self.config.cycle_duration:
             self.cycle_start = now
+            self.last_refill_time = now
             self.tokens = self.config.active_duration
         else:
             refill_rate = self.config.active_duration / self.config.cycle_duration
-            self.tokens += refill_rate * 0.02
+            refill_elapsed = max(0.0, now - self.last_refill_time)
+            self.last_refill_time = now
+            self.tokens += refill_rate * refill_elapsed
             if self.tokens > self.config.active_duration:
                 self.tokens = self.config.active_duration
-        cost = 0.02
+        cost = 1.0 / max(float(getattr(self.config, "detect_fps", 30)), 1.0)
         if self.tokens >= cost:
             self.tokens -= cost
             return True

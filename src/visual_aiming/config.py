@@ -9,7 +9,11 @@ class Config:
     roi_height: int = 315
     capture_fps: int = 30
     capture_thread_enabled: bool = True
+    runtime_poll_fps: int = 120
     detect_fps: int = 30
+    firing_detect_fps: int = 30
+    idle_detect_enabled: bool = True
+    idle_detect_fps: int = 8
     detect_only_new_frames: bool = True
 
     gaussian_ksize: int = 5
@@ -28,6 +32,8 @@ class Config:
     tracker_smoothing_factor: float = 0.66
     tracker_stop_threshold: float = 10.0
     tracker_reset_distance: float = 200.0
+    tracker_max_prediction_ms: float = 160.0
+    tracker_prediction_as_measurement: bool = True
 
     recoil_smooth_factor: float = 0.3
     recoil_max_step: int = 15

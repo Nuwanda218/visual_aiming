@@ -19,6 +19,7 @@ from .debug_visualizer import DebugVisualizer
 from .utils import ThrottledPrinter
 from .target_tracker import TargetTracker
 from .timing import sleep_precise
+from .detect_scheduler import DetectionScheduler
 
 def is_admin():
     try:
@@ -75,6 +76,7 @@ def main():
         )
     mouse_ctrl = MouseController(config)
     throttle = Throttle(config)
+    detect_scheduler = DetectionScheduler(config)
 
     recoil_comp = None
     need_motion_comp = bool(getattr(config, "view_compensation_enabled", True))
@@ -110,8 +112,8 @@ def main():
     else:
         print("调试窗口已关闭，可在 config.json 中将 debug_enabled 设为 true。")
 
-    frame_interval = 1.0 / max(float(getattr(config, "detect_fps", config.capture_fps)), 1.0)
-    last_time = time.time()
+    poll_interval = 1.0 / max(float(getattr(config, "runtime_poll_fps", 120)), 1.0)
+    last_time = time.perf_counter()
     firing = False
     firing_start_time = 0.0
     last_aim_base = None
@@ -123,10 +125,12 @@ def main():
     while not wakeup.should_exit():
         try:
             now = time.time()
-            sleep_time = frame_interval - (now - last_time)
+            now_perf = time.perf_counter()
+            sleep_time = poll_interval - (now_perf - last_time)
             if sleep_time > 0:
                 sleep_precise(sleep_time)
-            last_time = time.time()
+            last_time = time.perf_counter()
+            now = time.time()
 
             active = wakeup.get_active()
             if capture_worker is not None:
@@ -140,6 +144,7 @@ def main():
                     recoil_comp.clear_view_compensation()
                 if target_tracker is not None:
                     target_tracker.reset()
+                detect_scheduler.reset()
                 last_capture_seq = -1
                 mouse_ctrl.reset()
                 continue
@@ -157,10 +162,13 @@ def main():
                     recoil_comp.stop_firing()
                 print(f"[{time.strftime('%H:%M:%S')}] 压枪停止")
 
-            if firing and firing_bypass_throttle:
-                should_detect = True
-            else:
-                should_detect = throttle.allow()
+            should_detect = False
+            if detect_scheduler.due(active, firing):
+                detect_scheduler.mark()
+                if firing and firing_bypass_throttle:
+                    should_detect = True
+                else:
+                    should_detect = throttle.allow()
 
             aim_base = None
             if should_detect:
@@ -242,17 +250,41 @@ def main():
                 comp = recoil_comp.get_recoil_offset(time.time())
 
             base_target = aim_base
+            used_tracker_prediction = False
+            tracker_now = time.time()
+            if (
+                base_target is None
+                and target_tracker is not None
+                and target_tracker.has_recent_track(
+                    tracker_now,
+                    float(getattr(config, "tracker_max_prediction_ms", 160.0)),
+                )
+            ):
+                base_target = target_tracker.predict(tracker_now)
+                used_tracker_prediction = True
+
             if base_target is None and last_aim_base is not None:
-                if recoil_comp and bool(getattr(config, "view_compensation_enabled", True)):
-                    base_target = recoil_comp.apply_view_compensation(last_aim_base)
-                else:
-                    base_target = last_aim_base
+                base_target = last_aim_base
+
+            if (
+                base_target is not None
+                and aim_base is None
+                and recoil_comp
+                and bool(getattr(config, "view_compensation_enabled", True))
+            ):
+                base_target = recoil_comp.apply_view_compensation(base_target)
 
             control_target = None
             if base_target is not None:
                 control_target = (base_target[0] + comp[0], base_target[1] + comp[1])
 
             has_measurement = aim_base is not None
+            if (
+                not has_measurement
+                and used_tracker_prediction
+                and bool(getattr(config, "tracker_prediction_as_measurement", True))
+            ):
+                has_measurement = True
             if (
                 not has_measurement
                 and control_target is not None

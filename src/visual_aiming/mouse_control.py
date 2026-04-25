@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 
 from .utils import ThrottledPrinter
 from .visual_servo import ServoParams, VisualServoLoop
+from .timing import sleep_precise
 
 user32 = ctypes.windll.user32
 MOUSEEVENTF_MOVE = 0x0001
@@ -245,7 +246,7 @@ class MouseController:
     def _sleep_to_next_tick(self, tick_start: float, interval: float):
         remaining = interval - (time.perf_counter() - tick_start)
         if remaining > 0:
-            time.sleep(remaining)
+            sleep_precise(remaining)
 
     def _run_servo_step(self, measurement: Optional[Tuple[float, float]], dt: float, now: float):
         delta = self.servo.update(measurement, now, dt)

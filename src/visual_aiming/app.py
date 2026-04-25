@@ -17,6 +17,8 @@ from .throttle import Throttle
 from .recoil import RecoilCompensator
 from .debug_visualizer import DebugVisualizer
 from .utils import ThrottledPrinter
+from .target_tracker import TargetTracker
+from .timing import sleep_precise
 
 def is_admin():
     try:
@@ -63,6 +65,14 @@ def main():
     detector.set_debug(True)
     aim_calc = AimPointCalculator(config)
     aim_calc.set_wakeup(wakeup)
+    target_tracker = None
+    if bool(getattr(config, "tracker_enabled", True)):
+        target_tracker = TargetTracker(
+            smoothing_factor=float(getattr(config, "tracker_smoothing_factor", 0.66)),
+            prediction_time=float(getattr(config, "tracker_prediction_time", 0.025)),
+            stop_threshold=float(getattr(config, "tracker_stop_threshold", 10.0)),
+            reset_distance=float(getattr(config, "tracker_reset_distance", 200.0)),
+        )
     mouse_ctrl = MouseController(config)
     throttle = Throttle(config)
 
@@ -105,15 +115,17 @@ def main():
     firing = False
     firing_start_time = 0.0
     last_aim_base = None
+    last_capture_seq = -1
     firing_bypass_throttle = bool(getattr(config, "firing_bypass_throttle", True))
     firing_hold_last_aim = bool(getattr(config, "firing_hold_last_aim", True))
+    detect_only_new_frames = bool(getattr(config, "detect_only_new_frames", True))
 
     while not wakeup.should_exit():
         try:
             now = time.time()
             sleep_time = frame_interval - (now - last_time)
             if sleep_time > 0:
-                time.sleep(sleep_time)
+                sleep_precise(sleep_time)
             last_time = time.time()
 
             active = wakeup.get_active()
@@ -126,6 +138,9 @@ def main():
                         recoil_comp.stop_firing()
                 if recoil_comp:
                     recoil_comp.clear_view_compensation()
+                if target_tracker is not None:
+                    target_tracker.reset()
+                last_capture_seq = -1
                 mouse_ctrl.reset()
                 continue
 
@@ -149,20 +164,33 @@ def main():
 
             aim_base = None
             if should_detect:
+                capture_seq = None
                 if capture_worker is not None:
-                    frame, _, _ = capture_worker.get_latest()
+                    frame, _, capture_seq = capture_worker.get_latest()
+                    if (
+                        detect_only_new_frames
+                        and capture_seq == last_capture_seq
+                    ):
+                        frame = None
                 else:
                     frame = screen.grab()
                 if frame is not None:
+                    if capture_seq is not None:
+                        last_capture_seq = capture_seq
                     target = detector.detect(frame, config, roi_center, firing=firing)
+                    target_is_fresh = bool(getattr(detector, "last_result_fresh", True))
                     roi_offset = wakeup.get_roi_offset()
                     calibrate_point = wakeup.get_crosshair()
 
                     if roi_offset is not None and calibrate_point is not None:
                         roi_left, roi_top = roi_offset
-                        aim_base = aim_calc.calculate(target, roi_left, roi_top)
+                        raw_aim_base = aim_calc.calculate(target, roi_left, roi_top)
+                        aim_base = raw_aim_base if target_is_fresh else None
+                        fresh_measurement = target_is_fresh and target is not None and aim_base is not None
+                        if fresh_measurement and target_tracker is not None:
+                            aim_base = target_tracker.update(aim_base, time.time())
 
-                        if target is not None:
+                        if target is not None and target_is_fresh:
                             if debug_log_enabled:
                                 debug_printer.print(
                                     "target_detected",
@@ -181,6 +209,9 @@ def main():
                                 if not (firing and firing_hold_last_aim and last_aim_base is not None):
                                     cross = wakeup.get_crosshair()
                                     last_aim_base = cross if cross else get_cursor_pos()
+                        elif target is not None:
+                            if debug_log_enabled:
+                                debug_printer.print("target_reused", "[DEBUG] 跳帧复用旧检测框，不作为新测量")
                         else:
                             if debug_log_enabled:
                                 debug_printer.print("target_missing", "[DEBUG] 未检测到目标")

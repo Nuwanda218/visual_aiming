@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 import numpy as np
 
 from .screen_capture import ScreenCapture
+from .timing import sleep_precise
 
 
 class CaptureWorker:
@@ -32,6 +33,8 @@ class CaptureWorker:
             self._active = bool(active)
             if not active:
                 self._latest_frame = None
+                self._latest_time = 0.0
+                self._latest_seq = 0
 
     def get_latest(self) -> Tuple[Optional[np.ndarray], float, int]:
         with self._lock:
@@ -46,7 +49,7 @@ class CaptureWorker:
                     active = self._active
 
                 if not active:
-                    time.sleep(0.01)
+                    sleep_precise(0.01)
                     last_capture = 0.0
                     continue
 
@@ -55,7 +58,7 @@ class CaptureWorker:
                 now = time.perf_counter()
                 wait_for = interval - (now - last_capture)
                 if wait_for > 0:
-                    time.sleep(wait_for)
+                    sleep_precise(wait_for)
                     continue
 
                 last_capture = time.perf_counter()

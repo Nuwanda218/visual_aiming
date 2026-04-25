@@ -9,6 +9,8 @@
 │       ├── config.py
 │       ├── detection.py
 │       ├── capture_worker.py
+│       ├── target_tracker.py
+│       ├── timing.py
 │       ├── aim_calculator.py
 │       ├── visual_servo.py
 │       ├── mouse_control.py
@@ -45,6 +47,8 @@
 - Input state: `input_listener.py`
 - Capture: `screen_capture.py`
 - Capture worker: `capture_worker.py`
+- Target prediction: `target_tracker.py`
+- Timing helpers: `timing.py`
 - Detection: `detection.py`
 - Aim point calculation: `aim_calculator.py`
 - Control: `visual_servo.py`, `mouse_control.py`

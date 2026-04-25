@@ -71,6 +71,7 @@ class TargetDetector:
         self.class_names: Dict[int, str] = {}
         self.frame_count = 0
         self.last_result: Optional[DetectedTarget] = None
+        self.last_result_fresh = False
         self.use_half = False
         self.preloaded_shape = None
 
@@ -113,6 +114,7 @@ class TargetDetector:
             skip_frames = max(0, int(getattr(config, "yolo_skip_frames", 0)))
         if skip_frames > 0 and self.last_result is not None:
             if (self.frame_count - 1) % (skip_frames + 1) != 0:
+                self.last_result_fresh = False
                 return self.last_result
 
         conf_threshold = float(getattr(config, "yolo_conf_threshold", 0.5))
@@ -134,11 +136,13 @@ class TargetDetector:
         except Exception as exc:
             print(f"[YOLO] 推理失败: {exc}")
             self.last_result = None
+            self.last_result_fresh = False
             return None
 
         boxes = results[0].boxes if results else None
         if boxes is None or len(boxes) == 0:
             self.last_result = None
+            self.last_result_fresh = False
             return None
 
         if roi_center is None:
@@ -147,6 +151,7 @@ class TargetDetector:
 
         best_target = self._select_best_box(boxes, roi_center, config)
         self.last_result = best_target
+        self.last_result_fresh = best_target is not None
         return best_target
 
     def detect_bbox(

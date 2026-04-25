@@ -10,6 +10,7 @@ class Config:
     capture_fps: int = 30
     capture_thread_enabled: bool = True
     detect_fps: int = 30
+    detect_only_new_frames: bool = True
 
     gaussian_ksize: int = 5
     canny_sigma: float = 0.33
@@ -22,6 +23,11 @@ class Config:
     aim_switch_distance: float = 70.0
     aim_switch_smooth_factor: float = 0.35
     aim_target_preference: float = 0.85
+    tracker_enabled: bool = True
+    tracker_prediction_time: float = 0.025
+    tracker_smoothing_factor: float = 0.66
+    tracker_stop_threshold: float = 10.0
+    tracker_reset_distance: float = 200.0
 
     recoil_smooth_factor: float = 0.3
     recoil_max_step: int = 15

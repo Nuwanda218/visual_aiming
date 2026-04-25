@@ -59,6 +59,7 @@ python .\main.py
 - `servo_*`: 视觉伺服控制参数
 - `view_compensation_*`: 根据已发送鼠标位移修正旧瞄点的动态视角补偿
 - `debug_enabled`: 调试窗口开关
+- `config_ui_enabled`: 运行时参数面板开关
 
 ## 当前架构
 
@@ -88,6 +89,9 @@ python .\main.py
 
 - `src/visual_aiming/recoil.py`
   负责静态压枪曲线和动态视角补偿。
+
+- `src/visual_aiming/config_window.py`
+  运行时配置面板，支持运动参数可视化调整和自动保存。
 
 ## 维护建议
 

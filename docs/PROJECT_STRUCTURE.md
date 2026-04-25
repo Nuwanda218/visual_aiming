@@ -16,6 +16,7 @@
 │       ├── visual_servo.py
 │       ├── mouse_control.py
 │       ├── recoil.py
+│       ├── config_window.py
 │       ├── screen_capture.py
 │       ├── input_listener.py
 │       ├── throttle.py
@@ -55,4 +56,5 @@
 - Aim point calculation: `aim_calculator.py`
 - Control: `visual_servo.py`, `mouse_control.py`
 - Compensation: `recoil.py`
+- Runtime config UI: `config_window.py`
 - Debug display: `debug_visualizer.py`

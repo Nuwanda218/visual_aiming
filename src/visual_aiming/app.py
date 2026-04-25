@@ -20,6 +20,7 @@ from .utils import ThrottledPrinter
 from .target_tracker import TargetTracker
 from .timing import sleep_precise
 from .detect_scheduler import DetectionScheduler
+from .config_window import ConfigWindow
 
 def is_admin():
     try:
@@ -77,6 +78,10 @@ def main():
     mouse_ctrl = MouseController(config)
     throttle = Throttle(config)
     detect_scheduler = DetectionScheduler(config)
+    config_window = None
+    if bool(getattr(config, "config_ui_enabled", True)):
+        config_window = ConfigWindow(config, "config.json")
+        config_window.start()
 
     recoil_comp = None
     need_motion_comp = bool(getattr(config, "view_compensation_enabled", True))
@@ -133,6 +138,8 @@ def main():
             now = time.time()
 
             active = wakeup.get_active()
+            if target_tracker is not None:
+                target_tracker.configure_from(config)
             if capture_worker is not None:
                 capture_worker.set_active(active)
             if not active:
@@ -309,6 +316,8 @@ def main():
             continue
 
     mouse_ctrl.stop()
+    if config_window is not None:
+        config_window.stop()
     if capture_worker is not None:
         capture_worker.stop()
     elif screen is not None:

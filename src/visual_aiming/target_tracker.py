@@ -23,6 +23,12 @@ class TargetTracker:
         self.vx = 0.0
         self.vy = 0.0
 
+    def configure_from(self, config) -> None:
+        self.alpha = float(getattr(config, "tracker_smoothing_factor", self.alpha))
+        self.prediction_time = float(getattr(config, "tracker_prediction_time", self.prediction_time))
+        self.stop_threshold = float(getattr(config, "tracker_stop_threshold", self.stop_threshold))
+        self.reset_distance = float(getattr(config, "tracker_reset_distance", self.reset_distance))
+
     def reset(self) -> None:
         self.last_x = None
         self.last_y = None

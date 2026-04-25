@@ -109,6 +109,8 @@ class Config:
     debug_enabled: bool = False
     debug_log_enabled: bool = False
     debug_window_scale: float = 1.6
+    config_ui_enabled: bool = True
+    config_ui_autosave_ms: int = 350
 
     def load(self, path: str):
         with open(path, 'r', encoding='utf-8') as f:

@@ -172,6 +172,7 @@ class MouseController:
                 float(target_pos[1] - crosshair_pos[1]),
             )
 
+        self.servo.params = self._build_servo_params(self.config)
         delta = self.servo.update(measurement, now, dt)
         output_gain = float(getattr(self.config, "servo_output_gain", 1.0))
         move_x = delta.x * output_gain
@@ -204,12 +205,12 @@ class MouseController:
             self.motion_compensator.record_view_output(send_x, send_y)
 
     def _servo_worker(self):
-        interval = 1.0 / max(float(getattr(self.config, "servo_loop_hz", 240.0)), 1.0)
         last_time = time.perf_counter()
         last_measurement_seq = -1
         was_active = False
 
         while not self.stop_event.is_set():
+            interval = 1.0 / max(float(getattr(self.config, "servo_loop_hz", 240.0)), 1.0)
             loop_start = time.perf_counter()
             dt = max(0.0005, min(loop_start - last_time, 0.05))
             last_time = loop_start
@@ -249,6 +250,7 @@ class MouseController:
             sleep_precise(remaining)
 
     def _run_servo_step(self, measurement: Optional[Tuple[float, float]], dt: float, now: float):
+        self.servo.params = self._build_servo_params(self.config)
         delta = self.servo.update(measurement, now, dt)
         output_gain = float(getattr(self.config, "servo_output_gain", 1.0))
         move_x = delta.x * output_gain

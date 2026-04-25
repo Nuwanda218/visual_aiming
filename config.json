@@ -95,5 +95,7 @@
     "yolo_preload": false,
     "debug_enabled": true,
     "debug_log_enabled": false,
-    "debug_window_scale": 0.7
+    "debug_window_scale": 0.7,
+    "config_ui_enabled": true,
+    "config_ui_autosave_ms": 350
 }

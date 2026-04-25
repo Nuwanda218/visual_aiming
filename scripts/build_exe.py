@@ -1,23 +1,29 @@
 #!/usr/bin/env python3
-import os
 import subprocess
 import shutil
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # 清理之前的打包结果
 def clean_build():
     print("清理之前的打包结果...")
     try:
-        if os.path.exists('build'):
-            shutil.rmtree('build')
+        build_dir = PROJECT_ROOT / 'build'
+        dist_dir = PROJECT_ROOT / 'dist'
+        root_spec = PROJECT_ROOT / 'aim_assist.spec'
+        if build_dir.exists():
+            shutil.rmtree(build_dir)
             print("已删除 build 目录")
-        if os.path.exists('dist'):
+        if dist_dir.exists():
             try:
-                shutil.rmtree('dist')
+                shutil.rmtree(dist_dir)
                 print("已删除 dist 目录")
             except PermissionError:
                 print("警告：无法删除 dist 目录，可能文件正在被使用")
-        if os.path.exists('aim_assist.spec'):
-            os.remove('aim_assist.spec')
+        if root_spec.exists():
+            root_spec.unlink()
             print("已删除 aim_assist.spec 文件")
     except Exception as e:
         print(f"清理目录时出错：{e}")
@@ -30,8 +36,11 @@ def build_exe():
         'pyinstaller',
         '--onefile',
         '--name', 'aim_assist',
+        '--paths', 'src',
+        '--specpath', 'packaging',
         '--add-data', 'config.json;.',
         '--add-data', 'color_thresholds.txt;.',
+        '--add-data', 'models;models',
         '--hidden-import', 'cv2',
         '--hidden-import', 'numpy',
         '--hidden-import', 'pyautogui',
@@ -48,7 +57,13 @@ def build_exe():
     print("\n打包过程日志：")
     print("=" * 60)
     
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        cwd=PROJECT_ROOT,
+    )
     
     for line in process.stdout:
         print(line.strip())
@@ -68,15 +83,17 @@ def build_exe():
 # 复制必要文件到dist目录
 def copy_files():
     print("\n复制必要文件到 dist 目录...")
-    if not os.path.exists('dist'):
+    dist_dir = PROJECT_ROOT / 'dist'
+    if not dist_dir.exists():
         print("错误：dist 目录不存在")
         return
     
     files_to_copy = ['config.json', 'color_thresholds.txt']
     for file in files_to_copy:
-        if os.path.exists(file):
+        source = PROJECT_ROOT / file
+        if source.exists():
             try:
-                shutil.copy(file, 'dist/')
+                shutil.copy(source, dist_dir)
                 print(f"已复制 {file} 到 dist 目录")
             except Exception as e:
                 print(f"复制 {file} 时出错：{e}")

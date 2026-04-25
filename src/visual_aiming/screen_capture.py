@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import mss
-from utils import ThrottledPrinter
+from .utils import ThrottledPrinter
 
 class ScreenCapture:
     def __init__(self, config, wakeup):
@@ -32,3 +32,9 @@ class ScreenCapture:
             if self.fail_count <= 3 or self.fail_count % 30 == 0:
                 self.printer.print("screenshot_error", f"截图失败 ({self.fail_count}次): {e}")
             return None
+
+    def close(self):
+        try:
+            self.sct.close()
+        except Exception:
+            pass

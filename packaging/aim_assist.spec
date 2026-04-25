@@ -1,12 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+
+project_root = Path(__file__).resolve().parents[1]
 
 block_cipher = None
 
 
-a = Analysis(['main.py'],
-             pathex=['F:\\PyCharm\\python-code\\脚本\\瞄准吸附'],
+a = Analysis([str(project_root / 'main.py')],
+             pathex=[str(project_root), str(project_root / 'src')],
              binaries=[],
-             datas=[('config.json', '.'), ('color_thresholds.txt', '.')],
+             datas=[(str(project_root / 'config.json'), '.'), (str(project_root / 'color_thresholds.txt'), '.'), (str(project_root / 'models'), 'models')],
              hiddenimports=['cv2', 'numpy', 'pyautogui', 'keyboard', 'mss', 'pkg_resources.py2_warn', 'setuptools'],
              hookspath=[],
              runtime_hooks=[],

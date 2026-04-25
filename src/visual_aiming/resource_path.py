@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import sys
 import os
+from pathlib import Path
 
 def resource_path(relative_path: str) -> str:
     """
@@ -16,7 +17,8 @@ def resource_path(relative_path: str) -> str:
         资源文件的绝对路径
     """
     if hasattr(sys, '_MEIPASS'):
-        base_path = sys._MEIPASS
+        base_path = Path(sys._MEIPASS)
     else:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, relative_path)
+        package_dir = Path(__file__).resolve().parent
+        base_path = package_dir.parents[1]
+    return os.path.join(str(base_path), relative_path)

@@ -8,6 +8,8 @@ class Config:
     roi_width: int = 410
     roi_height: int = 315
     capture_fps: int = 30
+    capture_thread_enabled: bool = True
+    detect_fps: int = 30
 
     gaussian_ksize: int = 5
     canny_sigma: float = 0.33
@@ -48,6 +50,8 @@ class Config:
     servo_max_speed: float = 2719.0
     servo_max_accel: float = 20060.0
     servo_output_smooth: float = 0.20
+    servo_direction_reset_enabled: bool = True
+    servo_direction_reset_speed: float = 180.0
     servo_coast_ms: float = 235.0
     servo_lost_brake_ms: float = 323.0
     servo_reacquire_gate: float = 47.0

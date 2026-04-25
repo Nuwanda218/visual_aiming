@@ -60,6 +60,8 @@ class ServoParams:
     max_speed: float
     max_accel: float
     output_smooth: float
+    direction_reset_enabled: bool
+    direction_reset_speed: float
     coast_ms: float
     lost_brake_ms: float
     reacquire_gate: float
@@ -93,7 +95,15 @@ class AlphaBetaFilter:
         self.pos = self.pos + self.vel * dt
         self.last_time = now
 
-    def push(self, measurement: Vec2, now: float, alpha: float, beta: float) -> None:
+    def push(
+        self,
+        measurement: Vec2,
+        now: float,
+        alpha: float,
+        beta: float,
+        direction_reset_enabled: bool = True,
+        direction_reset_speed: float = 180.0,
+    ) -> None:
         alpha = max(0.01, min(alpha, 0.95))
         beta = max(0.0, min(beta, 0.80))
         if not self.initialized or self.last_time is None:
@@ -101,10 +111,23 @@ class AlphaBetaFilter:
             return
 
         previous_time = self.last_time
+        previous_pos = self.pos
+        previous_vel = self.vel
         self.predict_to(now)
         dt = max(now - previous_time, 1e-4)
 
         residual = measurement - self.pos
+        raw_vel = (measurement - previous_pos) / dt
+        if (
+            direction_reset_enabled
+            and raw_vel.length() >= direction_reset_speed
+            and previous_vel.length() >= direction_reset_speed
+            and raw_vel.x * previous_vel.x + raw_vel.y * previous_vel.y < 0.0
+        ):
+            self.pos = measurement
+            self.vel = raw_vel.clamp_length(2800.0)
+            return
+
         residual_magnitude = residual.length()
         adaptive_alpha = alpha
         adaptive_beta = beta
@@ -251,6 +274,8 @@ class VisualServoLoop:
                 now,
                 self.params.filter_alpha,
                 self.params.filter_beta,
+                self.params.direction_reset_enabled,
+                self.params.direction_reset_speed,
             )
 
         self.last_seen_time = now

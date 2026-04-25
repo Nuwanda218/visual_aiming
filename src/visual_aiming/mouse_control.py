@@ -6,8 +6,8 @@ import threading
 import time
 from typing import Optional, Tuple
 
-from utils import ThrottledPrinter
-from visual_servo import ServoParams, VisualServoLoop
+from .utils import ThrottledPrinter
+from .visual_servo import ServoParams, VisualServoLoop
 
 user32 = ctypes.windll.user32
 MOUSEEVENTF_MOVE = 0x0001
@@ -304,6 +304,8 @@ class MouseController:
             max_speed=float(getattr(config, "servo_max_speed", 2719.0)),
             max_accel=float(getattr(config, "servo_max_accel", 20060.0)),
             output_smooth=float(getattr(config, "servo_output_smooth", 0.20)),
+            direction_reset_enabled=bool(getattr(config, "servo_direction_reset_enabled", True)),
+            direction_reset_speed=float(getattr(config, "servo_direction_reset_speed", 180.0)),
             coast_ms=float(getattr(config, "servo_coast_ms", 235.0)),
             lost_brake_ms=float(getattr(config, "servo_lost_brake_ms", 323.0)),
             reacquire_gate=float(getattr(config, "servo_reacquire_gate", 47.0)),

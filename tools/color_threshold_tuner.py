@@ -8,6 +8,10 @@ import cv2
 import numpy as np
 import mss
 import time
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 class ColorThresholdTuner:
     def __init__(self):
@@ -56,7 +60,7 @@ class ColorThresholdTuner:
     def capture_screen(self):
         """使用静态图片"""
         # 加载静态图片
-        frame = cv2.imread('thermal.png')
+        frame = cv2.imread(str(PROJECT_ROOT / 'thermal.png'))
         
         if frame is None:
             print("无法加载 thermal.png 文件")
@@ -121,7 +125,7 @@ class ColorThresholdTuner:
                 break
             elif key == ord('s'):
                 # 保存参数
-                with open('color_thresholds.txt', 'w') as f:
+                with open(PROJECT_ROOT / 'color_thresholds.txt', 'w') as f:
                     f.write(f"R_MIN = {self.r_min}\n")
                     f.write(f"R_MAX = {self.r_max}\n")
                     f.write(f"G_MIN = {self.g_min}\n")

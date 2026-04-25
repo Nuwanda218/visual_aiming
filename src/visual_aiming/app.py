@@ -84,19 +84,14 @@ def main():
         config_window.start()
 
     recoil_comp = None
-    need_motion_comp = bool(getattr(config, "view_compensation_enabled", True))
-    if config.recoil_enabled or need_motion_comp:
+    if config.recoil_enabled:
         recoil_comp = RecoilCompensator(
             config.recoil_profile_path,
             load_profile=bool(config.recoil_enabled),
-            view_enabled=need_motion_comp,
-            view_gain_x=float(getattr(config, "view_compensation_gain_x", 1.0)),
-            view_gain_y=float(getattr(config, "view_compensation_gain_y", 1.0)),
-            view_max_offset=float(getattr(config, "view_compensation_max_offset", 220.0)),
+            config=config,
         )
-        mouse_ctrl.set_motion_compensator(recoil_comp)
     else:
-        print("[压枪] 压枪与动态视角补偿均已禁用")
+        print("[压枪] 压枪已禁用")
 
     roi_center = (config.roi_width // 2, config.roi_height // 2)
     debug_enabled = bool(getattr(config, "debug_enabled", False))
@@ -147,8 +142,6 @@ def main():
                     firing = False
                     if recoil_comp:
                         recoil_comp.stop_firing()
-                if recoil_comp:
-                    recoil_comp.clear_view_compensation()
                 if target_tracker is not None:
                     target_tracker.reset()
                 detect_scheduler.reset()
@@ -202,8 +195,13 @@ def main():
                         raw_aim_base = aim_calc.calculate(target, roi_left, roi_top)
                         aim_base = raw_aim_base if target_is_fresh else None
                         fresh_measurement = target_is_fresh and target is not None and aim_base is not None
-                        if fresh_measurement and target_tracker is not None:
+                        tracker_allowed = not (
+                            firing and bool(getattr(config, "firing_disable_tracker_prediction", True))
+                        )
+                        if fresh_measurement and target_tracker is not None and tracker_allowed:
                             aim_base = target_tracker.update(aim_base, time.time())
+                        elif fresh_measurement and target_tracker is not None and not tracker_allowed:
+                            target_tracker.reset()
 
                         if target is not None and target_is_fresh:
                             if debug_log_enabled:
@@ -214,8 +212,6 @@ def main():
                                 )
                             if aim_base is not None:
                                 last_aim_base = aim_base
-                                if recoil_comp:
-                                    recoil_comp.note_measurement()
                                 if debug_log_enabled:
                                     debug_printer.print("aim_point", f"[DEBUG] 瞄准点: {aim_base}")
                             else:
@@ -254,6 +250,7 @@ def main():
 
             comp = (0, 0)
             if recoil_comp and firing:
+                recoil_comp.configure_from(config)
                 comp = recoil_comp.get_recoil_offset(time.time())
 
             base_target = aim_base
@@ -262,6 +259,7 @@ def main():
             if (
                 base_target is None
                 and target_tracker is not None
+                and not (firing and bool(getattr(config, "firing_disable_tracker_prediction", True)))
                 and target_tracker.has_recent_track(
                     tracker_now,
                     float(getattr(config, "tracker_max_prediction_ms", 160.0)),
@@ -272,14 +270,6 @@ def main():
 
             if base_target is None and last_aim_base is not None:
                 base_target = last_aim_base
-
-            if (
-                base_target is not None
-                and aim_base is None
-                and recoil_comp
-                and bool(getattr(config, "view_compensation_enabled", True))
-            ):
-                base_target = recoil_comp.apply_view_compensation(base_target)
 
             control_target = None
             if base_target is not None:
@@ -292,15 +282,6 @@ def main():
                 and bool(getattr(config, "tracker_prediction_as_measurement", True))
             ):
                 has_measurement = True
-            if (
-                not has_measurement
-                and control_target is not None
-                and recoil_comp is not None
-                and bool(getattr(config, "view_compensation_as_measurement", True))
-                and recoil_comp.has_view_compensation()
-            ):
-                has_measurement = True
-
             mouse_ctrl.update_target(
                 control_target,
                 crosshair_pos=wakeup.get_crosshair(),

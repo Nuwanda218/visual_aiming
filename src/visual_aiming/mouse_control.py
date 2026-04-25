@@ -26,9 +26,8 @@ def get_cursor_pos() -> Tuple[int, int]:
 
 
 class MouseController:
-    def __init__(self, config, motion_compensator=None):
+    def __init__(self, config):
         self.config = config
-        self.motion_compensator = motion_compensator
         self.last_move_time = 0
         self.use_servo = bool(getattr(config, "servo_enabled", True))
         self.thread_enabled = self.use_servo and bool(getattr(config, "servo_thread_enabled", True))
@@ -71,9 +70,6 @@ class MouseController:
         self.stop_event.set()
         if self._servo_thread is not None:
             self._servo_thread.join(timeout=1.0)
-
-    def set_motion_compensator(self, motion_compensator):
-        self.motion_compensator = motion_compensator
 
     def update_target(
         self,
@@ -149,8 +145,6 @@ class MouseController:
         send_x = int(move_x)
         send_y = int(move_y)
         send_relative_move(send_x, send_y)
-        if self.motion_compensator is not None:
-            self.motion_compensator.record_view_output(send_x, send_y)
 
     def _move_towards_servo(
         self,
@@ -201,8 +195,6 @@ class MouseController:
             )
 
         send_relative_move(send_x, send_y)
-        if self.motion_compensator is not None:
-            self.motion_compensator.record_view_output(send_x, send_y)
 
     def _servo_worker(self):
         last_time = time.perf_counter()
@@ -279,8 +271,6 @@ class MouseController:
             )
 
         send_relative_move(send_x, send_y)
-        if self.motion_compensator is not None:
-            self.motion_compensator.record_view_output(send_x, send_y)
         output_to_error_gain = float(getattr(self.config, "servo_output_to_error_gain", 1.0))
         output_to_velocity_gain = float(getattr(self.config, "servo_output_to_velocity_gain", 1.0))
         self.servo.apply_output_feedback((send_x, send_y), dt, output_to_error_gain, output_to_velocity_gain)

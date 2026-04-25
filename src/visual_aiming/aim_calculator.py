@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import math
+import time
 from typing import Optional, Tuple
 
 
@@ -8,25 +9,17 @@ class AimPointCalculator:
         self.config = config
         self.wakeup = None
         self.locked_aim = None
+        self.locked_at = 0.0
         self.track_lost_frames = 0
         self._prev_aim_global = None
         self._velocity = (0, 0)
-        self.smooth_factor = getattr(config, 'aim_smooth_factor', 0.7)
-        self.switch_distance = float(getattr(config, 'aim_switch_distance', 70.0))
-        self.switch_smooth_factor = float(getattr(config, 'aim_switch_smooth_factor', 0.35))
-        self.head_bias = getattr(config, 'head_bias', 0.25)
-        self.aim_target_preference = self._clamp_preference(getattr(config, 'aim_target_preference', 1.0))
-        self.max_step_pixels = max(1, int(getattr(config, 'max_step_pixels', 10)))
-        self.unlock_distance = max(0, int(getattr(config, 'unlock_distance', 50)))
-        self.max_track_lost = max(0, int(getattr(config, 'max_track_lost', 5)))
-        self.firing_follow_x = float(getattr(config, 'firing_follow_x', 0.45))
-        self.firing_follow_y = float(getattr(config, 'firing_follow_y', 0.65))
-        self.firing_vertical_boost = float(getattr(config, 'firing_vertical_boost', 1.6))
+        self._refresh_runtime_config()
 
     def set_wakeup(self, wakeup):
         self.wakeup = wakeup
 
     def calculate(self, target, roi_left: int, roi_top: int) -> Optional[Tuple[int, int]]:
+        self._refresh_runtime_config()
         if self.wakeup is not None:
             active = self.wakeup.get_active()
             left_held = self.wakeup.get_left_held()
@@ -66,6 +59,7 @@ class AimPointCalculator:
         self.track_lost_frames = 0
         if self.locked_aim is None:
             self.locked_aim = raw_aim
+            self.locked_at = time.time()
             self._prev_aim_global = raw_aim
             return raw_aim
 
@@ -78,7 +72,15 @@ class AimPointCalculator:
         dy = raw_aim[1] - self.locked_aim[1]
         dist = math.hypot(dx, dy)
 
+        lock_age_ms = max(0.0, (time.time() - self.locked_at) * 1000.0)
+        if lock_age_ms <= self.firing_anchor_hold_ms:
+            return self.locked_aim
+
+        if abs(dx) <= self.firing_micro_deadzone and abs(dy) <= self.firing_micro_deadzone:
+            return self.locked_aim
+
         if self.unlock_distance > 0 and dist >= self.unlock_distance:
+            self.locked_at = time.time()
             return raw_aim
 
         step_x = self._compute_follow_step(dx, self.firing_follow_x, self.max_step_pixels)
@@ -160,4 +162,20 @@ class AimPointCalculator:
 
     def _reset_firing_lock(self):
         self.locked_aim = None
+        self.locked_at = 0.0
         self.track_lost_frames = 0
+
+    def _refresh_runtime_config(self):
+        self.smooth_factor = getattr(self.config, 'aim_smooth_factor', 0.7)
+        self.switch_distance = float(getattr(self.config, 'aim_switch_distance', 70.0))
+        self.switch_smooth_factor = float(getattr(self.config, 'aim_switch_smooth_factor', 0.35))
+        self.head_bias = getattr(self.config, 'head_bias', 0.25)
+        self.aim_target_preference = self._clamp_preference(getattr(self.config, 'aim_target_preference', 1.0))
+        self.max_step_pixels = max(1, int(getattr(self.config, 'max_step_pixels', 10)))
+        self.unlock_distance = max(0, int(getattr(self.config, 'unlock_distance', 50)))
+        self.max_track_lost = max(0, int(getattr(self.config, 'max_track_lost', 5)))
+        self.firing_follow_x = float(getattr(self.config, 'firing_follow_x', 0.45))
+        self.firing_follow_y = float(getattr(self.config, 'firing_follow_y', 0.65))
+        self.firing_vertical_boost = float(getattr(self.config, 'firing_vertical_boost', 1.6))
+        self.firing_anchor_hold_ms = max(0.0, float(getattr(self.config, 'firing_anchor_hold_ms', 220.0)))
+        self.firing_micro_deadzone = max(0.0, float(getattr(self.config, 'firing_micro_deadzone', 5.0)))

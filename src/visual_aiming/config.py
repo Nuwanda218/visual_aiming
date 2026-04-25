@@ -80,17 +80,22 @@ class Config:
     firing_follow_x: float = 0.45
     firing_follow_y: float = 0.65
     firing_vertical_boost: float = 1.6
+    firing_anchor_hold_ms: float = 220.0
+    firing_micro_deadzone: float = 5.0
+    firing_disable_tracker_prediction: bool = True
     firing_bypass_throttle: bool = True
     firing_yolo_skip_frames: int = 0
     firing_hold_last_aim: bool = True
 
     recoil_enabled: bool = True
     recoil_profile_path: str = "recoil_profile.json"
-    view_compensation_enabled: bool = True
-    view_compensation_gain_x: float = 1.0
-    view_compensation_gain_y: float = 1.0
-    view_compensation_max_offset: float = 220.0
-    view_compensation_as_measurement: bool = True
+    recoil_parametric_enabled: bool = True
+    recoil_parametric_start_delay_ms: float = 80.0
+    recoil_parametric_ramp_ms: float = 450.0
+    recoil_parametric_pull_y_per_sec: float = 180.0
+    recoil_parametric_max_y: float = 90.0
+    recoil_parametric_pull_x_per_sec: float = 0.0
+    recoil_parametric_max_x: float = 30.0
 
     yolo_model_path: str = "models/best.pt"
     yolo_conf_threshold: float = 0.5

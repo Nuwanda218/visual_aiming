@@ -60,10 +60,19 @@ def main():
     throttle = Throttle(config)
 
     recoil_comp = None
-    if config.recoil_enabled:
-        recoil_comp = RecoilCompensator(config.recoil_profile_path)
+    need_motion_comp = bool(getattr(config, "view_compensation_enabled", True))
+    if config.recoil_enabled or need_motion_comp:
+        recoil_comp = RecoilCompensator(
+            config.recoil_profile_path,
+            load_profile=bool(config.recoil_enabled),
+            view_enabled=need_motion_comp,
+            view_gain_x=float(getattr(config, "view_compensation_gain_x", 1.0)),
+            view_gain_y=float(getattr(config, "view_compensation_gain_y", 1.0)),
+            view_max_offset=float(getattr(config, "view_compensation_max_offset", 220.0)),
+        )
+        mouse_ctrl.set_motion_compensator(recoil_comp)
     else:
-        print("[压枪] 压枪已禁用")
+        print("[压枪] 压枪与动态视角补偿均已禁用")
 
     roi_center = (config.roi_width // 2, config.roi_height // 2)
     debug_enabled = bool(getattr(config, "debug_enabled", False))
@@ -106,6 +115,9 @@ def main():
                     firing = False
                     if recoil_comp:
                         recoil_comp.stop_firing()
+                if recoil_comp:
+                    recoil_comp.clear_view_compensation()
+                mouse_ctrl.reset()
                 continue
 
             left_held = wakeup.get_left_held()
@@ -126,13 +138,13 @@ def main():
             else:
                 should_detect = throttle.allow()
 
+            aim_base = None
             if should_detect:
                 frame = screen.grab()
                 if frame is not None:
                     target = detector.detect(frame, config, roi_center, firing=firing)
                     roi_offset = wakeup.get_roi_offset()
                     calibrate_point = wakeup.get_crosshair()
-                    aim_base = None
 
                     if roi_offset is not None and calibrate_point is not None:
                         roi_left, roi_top = roi_offset
@@ -147,6 +159,8 @@ def main():
                                 )
                             if aim_base is not None:
                                 last_aim_base = aim_base
+                                if recoil_comp:
+                                    recoil_comp.note_measurement()
                                 if debug_log_enabled:
                                     debug_printer.print("aim_point", f"[DEBUG] 瞄准点: {aim_base}")
                             else:
@@ -181,11 +195,36 @@ def main():
                     last_aim_base = cross if cross else get_cursor_pos()
 
             comp = (0, 0)
-            if firing and recoil_comp:
-                comp = recoil_comp.get_current_offset(time.time())
+            if recoil_comp and firing:
+                comp = recoil_comp.get_recoil_offset(time.time())
 
-            target_pos = (last_aim_base[0] + comp[0], last_aim_base[1] + comp[1])
-            mouse_ctrl.move_towards(target_pos)
+            base_target = aim_base
+            if base_target is None and last_aim_base is not None:
+                if recoil_comp and bool(getattr(config, "view_compensation_enabled", True)):
+                    base_target = recoil_comp.apply_view_compensation(last_aim_base)
+                else:
+                    base_target = last_aim_base
+
+            control_target = None
+            if base_target is not None:
+                control_target = (base_target[0] + comp[0], base_target[1] + comp[1])
+
+            has_measurement = aim_base is not None
+            if (
+                not has_measurement
+                and control_target is not None
+                and recoil_comp is not None
+                and bool(getattr(config, "view_compensation_as_measurement", True))
+                and recoil_comp.has_view_compensation()
+            ):
+                has_measurement = True
+
+            mouse_ctrl.update_target(
+                control_target,
+                crosshair_pos=wakeup.get_crosshair(),
+                has_measurement=has_measurement,
+                active=active,
+            )
 
         except KeyboardInterrupt:
             print(f"[{time.strftime('%H:%M:%S')}] 检测到 Ctrl+C，但程序不会退出。请按 Ctrl+Q 退出。")
@@ -194,6 +233,7 @@ def main():
             print(f"[{time.strftime('%H:%M:%S')}] 运行时错误: {e}")
             continue
 
+    mouse_ctrl.stop()
     wakeup.stop()
     cv2.destroyAllWindows()
     print(f"[{time.strftime('%H:%M:%S')}] 程序已退出")

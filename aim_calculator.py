@@ -12,6 +12,8 @@ class AimPointCalculator:
         self._prev_aim_global = None
         self._velocity = (0, 0)
         self.smooth_factor = getattr(config, 'aim_smooth_factor', 0.7)
+        self.switch_distance = float(getattr(config, 'aim_switch_distance', 70.0))
+        self.switch_smooth_factor = float(getattr(config, 'aim_switch_smooth_factor', 0.35))
         self.head_bias = getattr(config, 'head_bias', 0.25)
         self.aim_target_preference = self._clamp_preference(getattr(config, 'aim_target_preference', 1.0))
         self.max_step_pixels = max(1, int(getattr(config, 'max_step_pixels', 10)))
@@ -126,9 +128,12 @@ class AimPointCalculator:
             self._prev_aim_global = raw_aim
             return raw_aim
 
-        factor = self.smooth_factor
         prev_x, prev_y = self._prev_aim_global
         raw_x, raw_y = raw_aim
+        jump_distance = math.hypot(raw_x - prev_x, raw_y - prev_y)
+        factor = self.smooth_factor
+        if jump_distance >= self.switch_distance:
+            factor = min(factor, self.switch_smooth_factor)
 
         smooth_x = int(prev_x + (raw_x - prev_x) * factor)
         smooth_y = int(prev_y + (raw_y - prev_y) * factor)

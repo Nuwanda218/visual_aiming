@@ -204,6 +204,9 @@ class TargetDetector:
         roi_cx, roi_cy = roi_center
         candidates = []
         max_distance_sq = max(1, roi_cx * roi_cx + roi_cy * roi_cy)
+        previous_target = self.last_result
+        track_radius = max(1, int(getattr(config, "target_history_radius", 120)))
+        track_radius_sq = track_radius * track_radius
 
         for box in boxes:
             x1, y1, x2, y2 = box.xyxy[0].detach().cpu().numpy().tolist()
@@ -221,15 +224,31 @@ class TargetDetector:
             cy = y + h // 2
             distance_sq = (cx - roi_cx) ** 2 + (cy - roi_cy) ** 2
 
-            score = self._score_target(config, class_id, confidence, distance_sq, max_distance_sq)
             target = DetectedTarget((x, y, w, h), confidence, class_id, class_name)
-            candidates.append((score, target))
+            base_score = self._score_target(config, class_id, confidence, distance_sq, max_distance_sq)
+            total_score = self._apply_target_continuity(config, target, base_score, previous_target, track_radius_sq)
+            previous_distance_sq = self._distance_to_previous_target_sq(target, previous_target)
+            candidates.append(
+                {
+                    "score": total_score,
+                    "base_score": base_score,
+                    "target": target,
+                    "previous_distance_sq": previous_distance_sq,
+                }
+            )
 
         if not candidates:
             return None
 
-        candidates.sort(key=lambda item: item[0])
-        return candidates[0][1]
+        candidates.sort(key=lambda item: item["score"])
+        best_candidate = candidates[0]
+        sticky_candidate = self._select_sticky_candidate(candidates, previous_target, track_radius_sq)
+        if sticky_candidate is not None and sticky_candidate["target"] is not best_candidate["target"]:
+            switch_margin = max(0.0, float(getattr(config, "target_switch_margin", 0.08)))
+            if best_candidate["score"] + switch_margin >= sticky_candidate["score"]:
+                return sticky_candidate["target"]
+
+        return best_candidate["target"]
 
     def _extract_class_names(self) -> Dict[int, str]:
         names = getattr(self.model, "names", {})
@@ -277,6 +296,62 @@ class TargetDetector:
             class_penalty = 1.5
 
         return (class_penalty * 0.60) + (normalized_distance * 0.30) + (confidence_penalty * 0.10)
+
+    def _apply_target_continuity(
+        self,
+        config,
+        target: DetectedTarget,
+        base_score: float,
+        previous_target: Optional[DetectedTarget],
+        track_radius_sq: int,
+    ) -> float:
+        if previous_target is None:
+            return base_score
+
+        stickiness = max(0.0, min(1.0, float(getattr(config, "target_stickiness", 0.28))))
+        class_switch_penalty = max(0.0, float(getattr(config, "target_class_switch_penalty", 0.05)))
+        previous_distance_sq = self._distance_to_previous_target_sq(target, previous_target)
+
+        continuity_bonus = 0.0
+        if previous_distance_sq is not None and previous_distance_sq <= track_radius_sq:
+            normalized_track_distance = min(1.0, previous_distance_sq / max(1, track_radius_sq))
+            continuity_bonus = (1.0 - normalized_track_distance) * stickiness
+
+        continuity_score = base_score - continuity_bonus
+        if (
+            previous_target.class_id is not None
+            and target.class_id is not None
+            and target.class_id != previous_target.class_id
+        ):
+            continuity_score += class_switch_penalty
+
+        return continuity_score
+
+    def _distance_to_previous_target_sq(
+        self,
+        target: DetectedTarget,
+        previous_target: Optional[DetectedTarget],
+    ) -> Optional[int]:
+        if previous_target is None:
+            return None
+        dx = target.center_x - previous_target.center_x
+        dy = target.center_y - previous_target.center_y
+        return dx * dx + dy * dy
+
+    def _select_sticky_candidate(self, candidates, previous_target: Optional[DetectedTarget], track_radius_sq: int):
+        if previous_target is None:
+            return None
+
+        in_radius = [
+            candidate
+            for candidate in candidates
+            if candidate["previous_distance_sq"] is not None and candidate["previous_distance_sq"] <= track_radius_sq
+        ]
+        if not in_radius:
+            return None
+
+        in_radius.sort(key=lambda item: (item["previous_distance_sq"], item["score"]))
+        return in_radius[0]
 
     def _get_inference_imgsz(self, config) -> int:
         return max(32, int(getattr(config, "yolo_imgsz", 640)))

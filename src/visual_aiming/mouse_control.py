@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 import ctypes
+import ctypes.wintypes
 import math
 import random
 import threading
 import time
 from typing import Optional, Tuple
 
-from .utils import ThrottledPrinter
-from .visual_servo import ServoParams, VisualServoLoop
 from .timing import sleep_precise
+from .utils import ThrottledPrinter
 
 user32 = ctypes.windll.user32
 MOUSEEVENTF_MOVE = 0x0001
@@ -25,15 +25,15 @@ def get_cursor_pos() -> Tuple[int, int]:
     return (pt.x, pt.y)
 
 
+def smoothstep(value: float) -> float:
+    value = max(0.0, min(1.0, value))
+    return value * value * (3.0 - 2.0 * value)
+
+
 class MouseController:
     def __init__(self, config):
         self.config = config
-        self.last_move_time = 0
-        self.use_servo = bool(getattr(config, "servo_enabled", True))
-        self.thread_enabled = self.use_servo and bool(getattr(config, "servo_thread_enabled", True))
-        self.subpixel_x = 0.0
-        self.subpixel_y = 0.0
-        self.servo = VisualServoLoop(self._build_servo_params(config))
+        self.thread_enabled = bool(getattr(config, "servo_thread_enabled", True))
         self.state_lock = threading.Lock()
         self.stop_event = threading.Event()
         self._target_pos: Optional[Tuple[int, int]] = None
@@ -41,15 +41,24 @@ class MouseController:
         self._active = False
         self._measurement_seq = 0
         self._servo_thread: Optional[threading.Thread] = None
+
+        self.error_x = 0.0
+        self.error_y = 0.0
+        self.velocity_x = 0.0
+        self.velocity_y = 0.0
+        self.subpixel_x = 0.0
+        self.subpixel_y = 0.0
+        self.has_error = False
+
         try:
             self.printer = ThrottledPrinter(2.0)
-        except:
+        except Exception:
             self.printer = None
 
         if self.thread_enabled:
             self._servo_thread = threading.Thread(
                 target=self._servo_worker,
-                name="MouseServoLoop",
+                name="MouseFpsController",
                 daemon=True,
             )
             self._servo_thread.start()
@@ -60,9 +69,7 @@ class MouseController:
                 self._target_pos = None
                 self._crosshair_pos = None
                 self._active = False
-            return
-
-        self._reset_servo_state()
+        self._reset_controller_state()
 
     def stop(self):
         if not self.thread_enabled:
@@ -96,68 +103,9 @@ class MouseController:
         has_measurement: bool = True,
         active: bool = True,
     ):
-        if not active:
+        if not active or crosshair_pos is None:
             self.reset()
             return
-
-        if self.thread_enabled:
-            self.update_target(target_pos, crosshair_pos, has_measurement, active)
-            return
-
-        if self.use_servo:
-            self._move_towards_servo(target_pos, crosshair_pos, has_measurement)
-            return
-
-        if target_pos is None:
-            return
-        self._move_towards_legacy(target_pos)
-
-    def _move_towards_legacy(self, target_pos: Tuple[int, int]):
-        cur_x, cur_y = get_cursor_pos()
-        dx = target_pos[0] - cur_x
-        dy = target_pos[1] - cur_y
-        dist = math.hypot(dx, dy)
-
-        if dist <= self.config.aim_deadzone:
-            return
-
-        now = time.time()
-        if now - self.last_move_time > 0.5:
-            if self.printer:
-                self.printer.print("move_target", f"移动鼠标至: {target_pos} (dist={dist:.1f})")
-            else:
-                print(f"移动鼠标至: {target_pos} (dist={dist:.1f})")
-            self.last_move_time = now
-
-        move_x = dx
-        move_y = dy
-        max_step = self.config.recoil_max_step
-        move_x = max(-max_step, min(max_step, move_x))
-        move_y = max(-max_step, min(max_step, move_y))
-
-        jitter = getattr(self.config, "jitter_range", 0)
-        move_x += random.uniform(-jitter, jitter)
-        move_y += random.uniform(-jitter, jitter)
-
-        noise_std = getattr(self.config, "noise_std", 0)
-        move_x += random.gauss(0, noise_std)
-        move_y += random.gauss(0, noise_std)
-        send_x = int(move_x)
-        send_y = int(move_y)
-        send_relative_move(send_x, send_y)
-
-    def _move_towards_servo(
-        self,
-        target_pos: Optional[Tuple[int, int]],
-        crosshair_pos: Optional[Tuple[int, int]],
-        has_measurement: bool,
-    ):
-        if crosshair_pos is None:
-            self._reset_servo_state()
-            return
-
-        now = time.perf_counter()
-        dt = 1.0 / max(int(getattr(self.config, "capture_fps", 30)), 1)
 
         measurement = None
         if has_measurement and target_pos is not None:
@@ -166,35 +114,7 @@ class MouseController:
                 float(target_pos[1] - crosshair_pos[1]),
             )
 
-        self.servo.params = self._build_servo_params(self.config)
-        delta = self.servo.update(measurement, now, dt)
-        output_gain = float(getattr(self.config, "servo_output_gain", 1.0))
-        move_x = delta.x * output_gain
-        move_y = delta.y * output_gain
-
-        max_step = max(1, int(getattr(self.config, "servo_step_limit", getattr(self.config, "recoil_max_step", 15))))
-        move_x = max(-max_step, min(max_step, move_x))
-        move_y = max(-max_step, min(max_step, move_y))
-
-        move_x += self.subpixel_x
-        move_y += self.subpixel_y
-        send_x = int(round(move_x))
-        send_y = int(round(move_y))
-        self.subpixel_x = move_x - send_x
-        self.subpixel_y = move_y - send_y
-
-        if send_x == 0 and send_y == 0:
-            return
-
-        if measurement is not None and self.printer is not None:
-            error_mag = math.hypot(measurement[0], measurement[1])
-            command_mag = math.hypot(send_x, send_y)
-            self.printer.print(
-                "servo_move",
-                f"伺服控制 state={self.servo.track_state} error={error_mag:.1f} delta={command_mag:.1f}",
-            )
-
-        send_relative_move(send_x, send_y)
+        self._run_controller_step(measurement, 1.0 / max(float(getattr(self.config, "servo_loop_hz", 240.0)), 1.0))
 
     def _servo_worker(self):
         last_time = time.perf_counter()
@@ -215,7 +135,7 @@ class MouseController:
 
             if not active or crosshair_pos is None:
                 if was_active:
-                    self._reset_servo_state()
+                    self._reset_controller_state()
                     was_active = False
                 self._sleep_to_next_tick(loop_start, interval)
                 continue
@@ -233,7 +153,7 @@ class MouseController:
                 )
                 last_measurement_seq = measurement_seq
 
-            self._run_servo_step(measurement, dt, loop_start)
+            self._run_controller_step(measurement, dt)
             self._sleep_to_next_tick(loop_start, interval)
 
     def _sleep_to_next_tick(self, tick_start: float, interval: float):
@@ -241,16 +161,100 @@ class MouseController:
         if remaining > 0:
             sleep_precise(remaining)
 
-    def _run_servo_step(self, measurement: Optional[Tuple[float, float]], dt: float, now: float):
-        self.servo.params = self._build_servo_params(self.config)
-        delta = self.servo.update(measurement, now, dt)
+    def _run_controller_step(self, measurement: Optional[Tuple[float, float]], dt: float):
+        if measurement is not None:
+            self._accept_measurement(measurement)
+
+        if not self.has_error:
+            return
+
+        send_x, send_y = self._compute_move(dt)
+        if send_x == 0 and send_y == 0:
+            return
+
+        send_relative_move(send_x, send_y)
+        self._apply_output_feedback(send_x, send_y, dt)
+
+        if self.printer is not None:
+            error_mag = math.hypot(self.error_x, self.error_y)
+            command_mag = math.hypot(send_x, send_y)
+            self.printer.print(
+                "fps_mouse_move",
+                f"FPS控制 error={error_mag:.1f} delta={command_mag:.1f}",
+            )
+
+    def _accept_measurement(self, measurement: Tuple[float, float]):
+        mx, my = measurement
+        measurement_distance = math.hypot(mx, my)
+        current_distance = math.hypot(self.error_x, self.error_y)
+        reacquire_distance = max(1.0, float(getattr(self.config, "fps_reacquire_distance", 180.0)))
+
+        if not self.has_error or abs(measurement_distance - current_distance) >= reacquire_distance:
+            self.error_x = mx
+            self.error_y = my
+            self.velocity_x = 0.0
+            self.velocity_y = 0.0
+            self.has_error = True
+            return
+
+        if self.velocity_x * mx + self.velocity_y * my < 0.0:
+            self.velocity_x = 0.0
+            self.velocity_y = 0.0
+
+        blend = max(0.0, min(1.0, float(getattr(self.config, "fps_measurement_blend", 0.85))))
+        self.error_x = self.error_x * (1.0 - blend) + mx * blend
+        self.error_y = self.error_y * (1.0 - blend) + my * blend
+        self.has_error = True
+
+    def _compute_move(self, dt: float) -> Tuple[int, int]:
+        dt = max(0.0005, min(dt, 0.05))
+        distance = math.hypot(self.error_x, self.error_y)
+        deadzone = max(0.0, float(getattr(self.config, "servo_deadzone", 2.0)))
+
+        if distance <= deadzone:
+            self._brake_to_stop()
+            return (0, 0)
+
+        angle = math.atan2(self.error_y, self.error_x)
+        jitter_angle = max(0.0, float(getattr(self.config, "fps_jitter_angle", 0.0)))
+        if jitter_angle > 0.0:
+            jitter_distance = max(1.0, float(getattr(self.config, "fps_jitter_distance", 180.0)))
+            angle += random.uniform(-jitter_angle, jitter_angle) * min(1.0, distance / jitter_distance)
+
+        speed_gain = max(0.0, float(getattr(self.config, "fps_speed_gain", 42.0)))
+        min_speed = max(0.0, float(getattr(self.config, "fps_min_speed", 0.0)))
+        max_speed = max(min_speed, float(getattr(self.config, "fps_max_speed", 7200.0)))
+        target_speed = max(min_speed, min(max_speed, distance * speed_gain))
+
+        decel_radius = max(deadzone + 1.0, float(getattr(self.config, "fps_decel_radius", 135.0)))
+        near_scale = max(0.01, min(1.0, float(getattr(self.config, "fps_near_speed_scale", 0.10))))
+        decel = smoothstep(distance / decel_radius)
+        target_speed *= near_scale + (1.0 - near_scale) * decel
+
+        target_vel_x = math.cos(angle) * target_speed
+        target_vel_y = math.sin(angle) * target_speed
+        accel = max(0.1, float(getattr(self.config, "fps_acceleration", 52.0)))
+        alpha = 1.0 - math.exp(-accel * dt)
+        self.velocity_x += (target_vel_x - self.velocity_x) * alpha
+        self.velocity_y += (target_vel_y - self.velocity_y) * alpha
+
+        brake_radius = max(deadzone + 1.0, float(getattr(self.config, "fps_brake_radius", 90.0)))
+        brake = max(0.0, float(getattr(self.config, "fps_brake", 0.72)))
+        if distance < brake_radius and brake > 0.0:
+            brake_zone = 1.0 - smoothstep(distance / brake_radius)
+            retain = max(0.0, 1.0 - brake * brake_zone * dt * 60.0)
+            self.velocity_x *= retain
+            self.velocity_y *= retain
+
+        move_x = self.velocity_x * dt
+        move_y = self.velocity_y * dt
         output_gain = float(getattr(self.config, "servo_output_gain", 1.0))
-        move_x = delta.x * output_gain
-        move_y = delta.y * output_gain
+        move_x *= output_gain
+        move_y *= output_gain
 
         max_step = max(1, int(getattr(self.config, "servo_step_limit", getattr(self.config, "recoil_max_step", 15))))
-        move_x = max(-max_step, min(max_step, move_x))
-        move_y = max(-max_step, min(max_step, move_y))
+        move_x, move_y = self._clamp_length(move_x, move_y, float(max_step))
+        move_x, move_y = self._apply_overshoot_guard(move_x, move_y)
 
         move_x += self.subpixel_x
         move_y += self.subpixel_y
@@ -258,49 +262,60 @@ class MouseController:
         send_y = int(round(move_y))
         self.subpixel_x = move_x - send_x
         self.subpixel_y = move_y - send_y
+        return (send_x, send_y)
 
-        if send_x == 0 and send_y == 0:
-            return
+    def _apply_overshoot_guard(self, move_x: float, move_y: float) -> Tuple[float, float]:
+        if not bool(getattr(self.config, "servo_overshoot_guard_enabled", True)):
+            return move_x, move_y
 
-        if measurement is not None and self.printer is not None:
-            error_mag = math.hypot(measurement[0], measurement[1])
-            command_mag = math.hypot(send_x, send_y)
-            self.printer.print(
-                "servo_move",
-                f"伺服控制 state={self.servo.track_state} error={error_mag:.1f} delta={command_mag:.1f}",
-            )
+        distance = math.hypot(self.error_x, self.error_y)
+        deadzone = max(0.0, float(getattr(self.config, "servo_deadzone", 2.0)))
+        deadzone_scale = max(1.0, float(getattr(self.config, "servo_overshoot_guard_deadzone_scale", 1.45)))
 
-        send_relative_move(send_x, send_y)
-        output_to_error_gain = float(getattr(self.config, "servo_output_to_error_gain", 1.0))
-        output_to_velocity_gain = float(getattr(self.config, "servo_output_to_velocity_gain", 1.0))
-        self.servo.apply_output_feedback((send_x, send_y), dt, output_to_error_gain, output_to_velocity_gain)
+        if distance <= deadzone * deadzone_scale:
+            self._brake_to_stop()
+            return (0.0, 0.0)
 
-    def _reset_servo_state(self):
+        radius = max(deadzone + 1.0, float(getattr(self.config, "servo_overshoot_guard_radius", 80.0)))
+        if distance >= radius:
+            return move_x, move_y
+
+        ratio = max(0.05, min(1.0, float(getattr(self.config, "servo_overshoot_guard_ratio", 0.30))))
+        min_step = max(0.0, float(getattr(self.config, "servo_overshoot_guard_min_step", 0.0)))
+        feedback_gain = max(0.05, abs(float(getattr(self.config, "servo_output_to_error_gain", 1.0))))
+
+        allowed_screen_delta = max(min_step, (distance - deadzone) * ratio)
+        allowed_mouse_delta = allowed_screen_delta / feedback_gain
+        return self._clamp_length(move_x, move_y, allowed_mouse_delta)
+
+    def _apply_output_feedback(self, send_x: int, send_y: int, dt: float):
+        feedback_gain = float(getattr(self.config, "servo_output_to_error_gain", 1.0))
+        self.error_x -= send_x * feedback_gain
+        self.error_y -= send_y * feedback_gain
+
+        velocity_feedback = float(getattr(self.config, "fps_velocity_feedback", 0.0))
+        if dt > 1e-4 and abs(velocity_feedback) > 1e-6:
+            self.velocity_x -= (send_x / dt) * velocity_feedback
+            self.velocity_y -= (send_y / dt) * velocity_feedback
+
+        if math.hypot(self.error_x, self.error_y) <= float(getattr(self.config, "servo_deadzone", 2.0)):
+            self._brake_to_stop()
+
+    def _brake_to_stop(self):
+        self.error_x = 0.0
+        self.error_y = 0.0
+        self.velocity_x = 0.0
+        self.velocity_y = 0.0
         self.subpixel_x = 0.0
         self.subpixel_y = 0.0
-        self.servo.reset()
+        self.has_error = False
 
-    def _build_servo_params(self, config) -> ServoParams:
-        return ServoParams(
-            filter_alpha=float(getattr(config, "servo_filter_alpha", 0.602)),
-            filter_beta=float(getattr(config, "servo_filter_beta", 0.123)),
-            lead_ms=float(getattr(config, "servo_lead_ms", 4.5)),
-            kp=float(getattr(config, "servo_kp", 24.0)),
-            kd=float(getattr(config, "servo_kd", 0.023)),
-            curve=float(getattr(config, "servo_curve", 1.0)),
-            near_gain=float(getattr(config, "servo_near_gain", 0.10)),
-            far_gain=float(getattr(config, "servo_far_gain", 1.25)),
-            arrival_radius=float(getattr(config, "servo_arrival_radius", 95.0)),
-            near_brake=float(getattr(config, "servo_near_brake", 0.32)),
-            brake_radius=float(getattr(config, "servo_brake_radius", 42.0)),
-            deadzone=float(getattr(config, "servo_deadzone", 2.0)),
-            max_speed=float(getattr(config, "servo_max_speed", 2719.0)),
-            max_accel=float(getattr(config, "servo_max_accel", 20060.0)),
-            output_smooth=float(getattr(config, "servo_output_smooth", 0.20)),
-            direction_reset_enabled=bool(getattr(config, "servo_direction_reset_enabled", True)),
-            direction_reset_speed=float(getattr(config, "servo_direction_reset_speed", 180.0)),
-            coast_ms=float(getattr(config, "servo_coast_ms", 235.0)),
-            lost_brake_ms=float(getattr(config, "servo_lost_brake_ms", 323.0)),
-            reacquire_gate=float(getattr(config, "servo_reacquire_gate", 47.0)),
-            reacquire_ramp_ms=float(getattr(config, "servo_reacquire_ramp_ms", 0.0)),
-        )
+    def _reset_controller_state(self):
+        self._brake_to_stop()
+
+    def _clamp_length(self, x: float, y: float, max_length: float) -> Tuple[float, float]:
+        length = math.hypot(x, y)
+        if length <= max_length or length <= 1e-6:
+            return x, y
+        scale = max_length / length
+        return x * scale, y * scale

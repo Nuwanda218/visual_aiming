@@ -13,8 +13,8 @@
 │       ├── target_tracker.py
 │       ├── timing.py
 │       ├── aim_calculator.py
-│       ├── visual_servo.py
 │       ├── mouse_control.py
+│       ├── visual_servo.py
 │       ├── recoil.py
 │       ├── config_window.py
 │       ├── screen_capture.py
@@ -54,7 +54,7 @@
 - Timing helpers: `timing.py`
 - Detection: `detection.py`
 - Aim point calculation: `aim_calculator.py`
-- Control: `visual_servo.py`, `mouse_control.py`
+- Control: `mouse_control.py` uses the active FPS-style relative mouse controller. `visual_servo.py` is retained as a legacy/reference controller.
 - Compensation: `recoil.py`
 - Runtime config UI: `config_window.py`
 - Debug display: `debug_visualizer.py`

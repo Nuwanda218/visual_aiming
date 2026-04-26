@@ -3,7 +3,7 @@
 这是一个基于 YOLOv8 的实时视觉辅助瞄准实验项目。当前主链路是：
 
 ```text
-固定 ROI 截图 -> YOLOv8 head/person 检测 -> 类别感知瞄点计算 -> 视觉伺服控制 -> 鼠标相对位移输出
+固定 ROI 截图 -> YOLOv8 head/person 检测 -> 类别感知瞄点计算 -> FPS 风格速度控制 -> 鼠标相对位移输出
 ```
 
 项目仍处于快速迭代阶段，当前重点是目标选择稳定性、瞄点平滑、长按持续吸附、定点射击控制和 GPU 推理性能。
@@ -56,7 +56,9 @@ python .\main.py
 - `idle_detect_fps`: 已激活但未开火时的空闲检测频率
 - `detect_only_new_frames`: 只对新的截图帧做推理，避免重复跑同一帧
 - `tracker_*`: 轻量目标速度预测参数
-- `servo_*`: 视觉伺服控制参数
+- `fps_*`: 鼠标速度状态、加速度、减速半径和近场刹车参数
+- `servo_output_gain` / `servo_step_limit` / `servo_loop_hz`: 最终鼠标输出和控制线程参数
+- `servo_overshoot_guard_*`: 近距离防越界输出限制，减少左右/上下摆动
 - `firing_*`: 开火时的锁点、微动死区和跟随参数
 - `recoil_parametric_*`: 没有压枪曲线时使用的参数化下拉补偿
 - `debug_enabled`: 调试窗口开关
@@ -82,11 +84,8 @@ python .\main.py
 - `src/visual_aiming/aim_calculator.py`
   将检测框映射为屏幕瞄点，并对大幅跳变做额外平滑。
 
-- `src/visual_aiming/visual_servo.py`
-  视觉伺服控制核心，包含位置/速度估计、近远场速度曲线、近场制动和丢测量后的 coast/lost 状态。
-
 - `src/visual_aiming/mouse_control.py`
-  独立高频鼠标控制线程，持续消费最新瞄点并发送相对鼠标位移。
+  独立高频鼠标控制线程，使用 FPS 风格速度状态、距离减速和防越界限制发送相对鼠标位移。
 
 - `src/visual_aiming/recoil.py`
   负责静态压枪曲线和无曲线时的参数化压枪补偿。

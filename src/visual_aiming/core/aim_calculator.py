@@ -84,11 +84,7 @@ class AimPointCalculator:
             return raw_aim
 
         step_x = self._compute_follow_step(dx, self.firing_follow_x, self.max_step_pixels)
-
-        y_limit = self.max_step_pixels
-        if dy > 0:
-            y_limit = max(y_limit, int(round(self.max_step_pixels * self.firing_vertical_boost)))
-        step_y = self._compute_follow_step(dy, self.firing_follow_y, y_limit)
+        step_y = self._compute_follow_step(dy, self.firing_follow_y, self.max_step_pixels)
 
         next_x = self.locked_aim[0] + step_x
         next_y = self.locked_aim[1] + step_y
@@ -176,6 +172,5 @@ class AimPointCalculator:
         self.max_track_lost = max(0, int(getattr(self.config, 'max_track_lost', 5)))
         self.firing_follow_x = float(getattr(self.config, 'firing_follow_x', 0.45))
         self.firing_follow_y = float(getattr(self.config, 'firing_follow_y', 0.65))
-        self.firing_vertical_boost = float(getattr(self.config, 'firing_vertical_boost', 1.6))
         self.firing_anchor_hold_ms = max(0.0, float(getattr(self.config, 'firing_anchor_hold_ms', 220.0)))
         self.firing_micro_deadzone = max(0.0, float(getattr(self.config, 'firing_micro_deadzone', 5.0)))

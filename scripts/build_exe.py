@@ -39,7 +39,6 @@ def build_exe():
         '--paths', 'src',
         '--specpath', 'packaging',
         '--add-data', 'config.json;.',
-        '--add-data', 'color_thresholds.txt;.',
         '--add-data', 'models;models',
         '--hidden-import', 'cv2',
         '--hidden-import', 'numpy',
@@ -88,7 +87,7 @@ def copy_files():
         print("错误：dist 目录不存在")
         return
     
-    files_to_copy = ['config.json', 'color_thresholds.txt']
+    files_to_copy = ['config.json']
     for file in files_to_copy:
         source = PROJECT_ROOT / file
         if source.exists():

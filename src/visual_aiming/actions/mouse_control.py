@@ -7,8 +7,8 @@ import threading
 import time
 from typing import Optional, Tuple
 
-from .timing import sleep_precise
-from .utils import ThrottledPrinter
+from ..common.timing import sleep_precise
+from ..common.utils import ThrottledPrinter
 
 user32 = ctypes.windll.user32
 MOUSEEVENTF_MOVE = 0x0001
@@ -17,6 +17,10 @@ MOUSEEVENTF_MOVE = 0x0001
 def send_relative_move(dx: int, dy: int):
     """发送相对鼠标移动事件"""
     user32.mouse_event(MOUSEEVENTF_MOVE, dx, dy, 0, 0)
+
+
+def set_cursor_pos(x: float, y: float):
+    user32.SetCursorPos(int(round(x)), int(round(y)))
 
 
 def get_cursor_pos() -> Tuple[int, int]:
@@ -93,7 +97,11 @@ class MouseController:
             self._target_pos = target_pos
             self._crosshair_pos = crosshair_pos
             self._active = active
-            if has_measurement and target_pos is not None and crosshair_pos is not None:
+            if (
+                has_measurement
+                and target_pos is not None
+                and (self._absolute_mode_enabled() or crosshair_pos is not None)
+            ):
                 self._measurement_seq += 1
 
     def move_towards(
@@ -103,7 +111,16 @@ class MouseController:
         has_measurement: bool = True,
         active: bool = True,
     ):
-        if not active or crosshair_pos is None:
+        if not active:
+            self.reset()
+            return
+
+        if self._absolute_mode_enabled():
+            if target_pos is not None and has_measurement:
+                self._move_absolute(target_pos)
+            return
+
+        if crosshair_pos is None:
             self.reset()
             return
 
@@ -133,7 +150,8 @@ class MouseController:
                 active = self._active
                 measurement_seq = self._measurement_seq
 
-            if not active or crosshair_pos is None:
+            absolute_mode = self._absolute_mode_enabled()
+            if not active or (not absolute_mode and crosshair_pos is None):
                 if was_active:
                     self._reset_controller_state()
                     was_active = False
@@ -141,6 +159,13 @@ class MouseController:
                 continue
 
             was_active = True
+            if absolute_mode:
+                if measurement_seq != last_measurement_seq and target_pos is not None:
+                    self._move_absolute(target_pos)
+                    last_measurement_seq = measurement_seq
+                self._sleep_to_next_tick(loop_start, interval)
+                continue
+
             measurement = None
             if (
                 measurement_seq != last_measurement_seq
@@ -160,6 +185,34 @@ class MouseController:
         remaining = interval - (time.perf_counter() - tick_start)
         if remaining > 0:
             sleep_precise(remaining)
+
+    def _move_absolute(self, target_pos: Tuple[int, int]):
+        target_x, target_y = target_pos
+        smooth = max(0.0, min(1.0, float(getattr(self.config, "mouse_absolute_smooth_factor", 1.0))))
+        max_step = max(0.0, float(getattr(self.config, "mouse_absolute_max_step", 0.0)))
+
+        if smooth >= 1.0 and max_step <= 0.0:
+            set_cursor_pos(target_x, target_y)
+            self._reset_controller_state()
+            return
+
+        cursor_x, cursor_y = get_cursor_pos()
+        move_x = (target_x - cursor_x) * max(smooth, 0.01)
+        move_y = (target_y - cursor_y) * max(smooth, 0.01)
+        if max_step > 0.0:
+            move_x, move_y = self._clamp_length(move_x, move_y, max_step)
+
+        set_cursor_pos(cursor_x + move_x, cursor_y + move_y)
+        self._reset_controller_state()
+
+        if self.printer is not None:
+            self.printer.print(
+                "absolute_mouse_move",
+                f"绝对移动测试 target=({int(target_x)}, {int(target_y)})",
+            )
+
+    def _absolute_mode_enabled(self) -> bool:
+        return bool(getattr(self.config, "mouse_absolute_mode_enabled", False))
 
     def _run_controller_step(self, measurement: Optional[Tuple[float, float]], dt: float):
         if measurement is not None:
@@ -252,7 +305,7 @@ class MouseController:
         move_x *= output_gain
         move_y *= output_gain
 
-        max_step = max(1, int(getattr(self.config, "servo_step_limit", getattr(self.config, "recoil_max_step", 15))))
+        max_step = max(1, int(getattr(self.config, "servo_step_limit", 15)))
         move_x, move_y = self._clamp_length(move_x, move_y, float(max_step))
         move_x, move_y = self._apply_overshoot_guard(move_x, move_y)
 

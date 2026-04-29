@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 import numpy as np
 
 from .screen_capture import ScreenCapture
-from .timing import sleep_precise
+from ..common.timing import sleep_precise
 
 
 class CaptureWorker:

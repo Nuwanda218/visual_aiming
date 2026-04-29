@@ -35,8 +35,6 @@ class Config:
     tracker_max_prediction_ms: float = 160.0
     tracker_prediction_as_measurement: bool = True
 
-    recoil_smooth_factor: float = 0.3
-    recoil_max_step: int = 15
     jitter_range: float = 5.0
     noise_std: float = 2.0
     aim_deadzone: int = 8
@@ -73,6 +71,9 @@ class Config:
     servo_overshoot_guard_ratio: float = 0.30
     servo_overshoot_guard_min_step: float = 0.0
     servo_overshoot_guard_deadzone_scale: float = 1.45
+    mouse_absolute_mode_enabled: bool = False
+    mouse_absolute_smooth_factor: float = 1.0
+    mouse_absolute_max_step: float = 0.0
     fps_acceleration: float = 52.0
     fps_speed_gain: float = 42.0
     fps_min_speed: float = 0.0
@@ -97,23 +98,12 @@ class Config:
     max_track_lost: int = 5
     firing_follow_x: float = 0.45
     firing_follow_y: float = 0.65
-    firing_vertical_boost: float = 1.6
     firing_anchor_hold_ms: float = 220.0
     firing_micro_deadzone: float = 5.0
     firing_disable_tracker_prediction: bool = True
     firing_bypass_throttle: bool = True
     firing_yolo_skip_frames: int = 0
     firing_hold_last_aim: bool = True
-
-    recoil_enabled: bool = True
-    recoil_profile_path: str = "recoil_profile.json"
-    recoil_parametric_enabled: bool = True
-    recoil_parametric_start_delay_ms: float = 80.0
-    recoil_parametric_ramp_ms: float = 450.0
-    recoil_parametric_pull_y_per_sec: float = 180.0
-    recoil_parametric_max_y: float = 90.0
-    recoil_parametric_pull_x_per_sec: float = 0.0
-    recoil_parametric_max_x: float = 30.0
 
     yolo_model_path: str = "models/best.pt"
     yolo_conf_threshold: float = 0.5

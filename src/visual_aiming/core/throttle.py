@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import random
 import time
-from .utils import ThrottledPrinter
+from ..common.utils import ThrottledPrinter
 
 class Throttle:
     def __init__(self, config):

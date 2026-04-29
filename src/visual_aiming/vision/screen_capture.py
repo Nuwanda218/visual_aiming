@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import mss
-from .utils import ThrottledPrinter
+from ..common.utils import ThrottledPrinter
 
 class ScreenCapture:
     def __init__(self, config, wakeup):

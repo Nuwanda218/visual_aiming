@@ -238,6 +238,9 @@ class ConfigWindow:
             (
                 "运动灵敏度",
                 [
+                    BoolSpec("mouse_absolute_mode_enabled", "绝对移动测试", "直接把系统鼠标移动到瞄准点。只用于验证瞄点坐标，不适合多数 Raw Input 游戏视角。"),
+                    ParamSpec("mouse_absolute_smooth_factor", "绝对移动平滑", 0.05, 1.0, 0.01, "绝对移动每次接近瞄准点的比例。1 表示直接跳到瞄准点。"),
+                    ParamSpec("mouse_absolute_max_step", "绝对移动步长", 0, 500, 5, "绝对移动单次最大像素。0 表示不限制，直接按平滑比例移动。"),
                     ParamSpec("servo_output_gain", "整体输出增益", 0.2, 3.0, 0.01, "整体放大/缩小鼠标移动量。大了更跟手，也更容易过冲。"),
                     ParamSpec("servo_step_limit", "单步最大输出", 4, 120, 1, "每个控制 tick 最多发送多少像素位移。决定瞬间追赶上限。", int),
                     ParamSpec("servo_loop_hz", "控制线程频率", 60, 500, 5, "鼠标控制线程频率。过高会增加 CPU 调度压力。"),
@@ -323,22 +326,8 @@ class ConfigWindow:
                     BoolSpec("firing_disable_tracker_prediction", "开火禁用预测", "开火时不使用目标速度预测，避免提前量导致横摆。"),
                     ParamSpec("firing_follow_x", "开火锁点 X 跟随", 0, 1, 0.01, "定点锁定时间结束后，横向跟随新瞄点的比例。"),
                     ParamSpec("firing_follow_y", "开火锁点 Y 跟随", 0, 1, 0.01, "定点锁定时间结束后，纵向跟随新瞄点的比例。"),
-                    ParamSpec("firing_vertical_boost", "开火下拉增强", 0.5, 3, 0.05, "开火时向下跟随的额外上限倍率。"),
                     ParamSpec("max_step_pixels", "锁点每帧最大步长", 1, 40, 1, "锁点跟随时每次最多移动多少像素。降低会更定点。", int),
                     ParamSpec("unlock_distance", "重新锁定距离", 10, 180, 5, "新瞄点距离锁点超过该值时，认为需要重新锁定。", int),
-                ],
-            ),
-            (
-                "补偿",
-                [
-                    BoolSpec("recoil_enabled", "启用压枪", "开启后优先读取 recoil_profile.json；没有曲线时使用参数化压枪。"),
-                    BoolSpec("recoil_parametric_enabled", "启用参数化压枪", "没有压枪曲线时，根据持续开火时间自动生成下拉补偿。"),
-                    ParamSpec("recoil_parametric_start_delay_ms", "压枪起始延迟", 0, 400, 5, "开火后延迟多久开始补偿，避免首发被过早下拉。"),
-                    ParamSpec("recoil_parametric_ramp_ms", "压枪爬升时间", 50, 1500, 10, "补偿从弱到强的过渡时间。越大越柔，越小越快进入稳定下拉。"),
-                    ParamSpec("recoil_parametric_pull_y_per_sec", "纵向下拉速度", -600, 600, 5, "每秒叠加的纵向补偿。正值会把控制目标向下移，负值反向。"),
-                    ParamSpec("recoil_parametric_max_y", "纵向最大补偿", 0, 300, 1, "限制持续开火时最多向下补偿多少像素。"),
-                    ParamSpec("recoil_parametric_pull_x_per_sec", "横向补偿速度", -300, 300, 5, "用于修正固定左右飘枪；多数情况下保持 0。"),
-                    ParamSpec("recoil_parametric_max_x", "横向最大补偿", 0, 160, 1, "限制持续开火时最多横向补偿多少像素。"),
                 ],
             ),
         ]

@@ -8,7 +8,7 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from visual_aiming.app import main
+from visual_aiming.core.runtime import main
 
 
 if __name__ == "__main__":

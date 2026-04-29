@@ -3,36 +3,38 @@
 ```text
 .
 ├── main.py
+├── config.json
+├── requirements.txt
 ├── src/
 │   └── visual_aiming/
 │       ├── app.py
 │       ├── config.py
-│       ├── detection.py
-│       ├── capture_worker.py
-│       ├── detect_scheduler.py
-│       ├── target_tracker.py
-│       ├── timing.py
-│       ├── aim_calculator.py
-│       ├── mouse_control.py
-│       ├── visual_servo.py
-│       ├── recoil.py
-│       ├── config_window.py
-│       ├── screen_capture.py
-│       ├── input_listener.py
-│       ├── throttle.py
-│       ├── debug_visualizer.py
-│       ├── resource_path.py
-│       └── utils.py
+│       ├── core/
+│       │   ├── runtime.py
+│       │   ├── aim_calculator.py
+│       │   ├── target_tracker.py
+│       │   ├── detect_scheduler.py
+│       │   └── throttle.py
+│       ├── vision/
+│       │   ├── screen_capture.py
+│       │   ├── capture_worker.py
+│       │   └── detection.py
+│       ├── actions/
+│       │   ├── input_listener.py
+│       │   ├── mouse_control.py
+│       │   ├── debug_visualizer.py
+│       │   ├── config_window.py
+│       │   └── visual_servo.py
+│       └── common/
+│           ├── timing.py
+│           ├── resource_path.py
+│           └── utils.py
 ├── models/
 │   └── best.pt
-├── tools/
-│   └── color_threshold_tuner.py
 ├── scripts/
 │   └── build_exe.py
 ├── packaging/
 │   └── aim_assist.spec
-├── config.json
-├── requirements.txt
 └── docs/
     └── PROJECT_STRUCTURE.md
 ```
@@ -40,21 +42,13 @@
 ## Entry Points
 
 - `main.py`: stable compatibility launcher. Use this for VSCode and normal local runs.
-- `src/visual_aiming/app.py`: actual application loop.
+- `src/visual_aiming/app.py`: compatibility wrapper that imports `visual_aiming.core.runtime.main`.
+- `src/visual_aiming/core/runtime.py`: actual application loop.
 - `scripts/build_exe.py`: PyInstaller build helper.
-- `tools/color_threshold_tuner.py`: legacy color-threshold tuning utility retained for reference.
 
 ## Runtime Layers
 
-- Input state: `input_listener.py`
-- Capture: `screen_capture.py`
-- Capture worker: `capture_worker.py`
-- Detection scheduler: `detect_scheduler.py`
-- Target prediction: `target_tracker.py`
-- Timing helpers: `timing.py`
-- Detection: `detection.py`
-- Aim point calculation: `aim_calculator.py`
-- Control: `mouse_control.py` uses the active FPS-style relative mouse controller. `visual_servo.py` is retained as a legacy/reference controller.
-- Compensation: `recoil.py`
-- Runtime config UI: `config_window.py`
-- Debug display: `debug_visualizer.py`
+- Vision module: `vision/screen_capture.py`, `vision/capture_worker.py`, `vision/detection.py`
+- Core interface module: `core/runtime.py`, `core/detect_scheduler.py`, `core/throttle.py`, `core/aim_calculator.py`, `core/target_tracker.py`
+- Action module: `actions/input_listener.py`, `actions/mouse_control.py`, `actions/debug_visualizer.py`, `actions/config_window.py`
+- Common helpers: `common/timing.py`, `common/resource_path.py`, `common/utils.py`

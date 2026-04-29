@@ -6,7 +6,7 @@ import time
 import tkinter as tk
 from dataclasses import dataclass
 from tkinter import ttk
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,14 @@ class ParamSpec:
 class BoolSpec:
     key: str
     label: str
+    description: str
+
+
+@dataclass(frozen=True)
+class ChoiceSpec:
+    key: str
+    label: str
+    choices: Tuple[str, ...]
     description: str
 
 
@@ -120,8 +128,10 @@ class ConfigWindow:
         for item in items:
             if isinstance(item, ParamSpec):
                 self._add_numeric_row(body, row, item)
-            else:
+            elif isinstance(item, BoolSpec):
                 self._add_bool_row(body, row, item)
+            else:
+                self._add_choice_row(body, row, item)
             row += 1
 
         return outer
@@ -167,6 +177,30 @@ class ConfigWindow:
             sticky="w",
             pady=7,
         )
+
+    def _add_choice_row(self, parent, row: int, spec: ChoiceSpec):
+        current = str(self._read_value(spec.key, spec.choices[0]))
+        if current not in spec.choices:
+            current = spec.choices[0]
+        value_var = tk.StringVar(value=current)
+
+        ttk.Label(parent, text=spec.label, width=18).grid(row=row, column=0, sticky="nw", padx=(0, 8), pady=7)
+        combo = ttk.Combobox(
+            parent,
+            textvariable=value_var,
+            values=spec.choices,
+            state="readonly",
+            width=14,
+        )
+        combo.grid(row=row, column=1, sticky="w", pady=7)
+        ttk.Label(parent, text=spec.description, wraplength=460).grid(
+            row=row,
+            column=2,
+            columnspan=2,
+            sticky="w",
+            pady=7,
+        )
+        combo.bind("<<ComboboxSelected>>", lambda _event, s=spec, v=value_var: self._set_value(s.key, v.get()))
 
     def _on_numeric_scale(self, spec: ParamSpec, value_var: tk.DoubleVar, text_var: tk.StringVar):
         value = self._snap(value_var.get(), spec)
@@ -236,30 +270,58 @@ class ConfigWindow:
     def _sections(self):
         return [
             (
-                "运动灵敏度",
+                "核心性能",
+                [
+                    ParamSpec("runtime_poll_fps", "主轮询频率", 30, 300, 5, "主循环喂控制目标的频率，不等于 YOLO 推理频率。", int),
+                    ParamSpec("capture_fps", "截图频率", 5, 160, 1, "截图线程采样频率。高了更及时，也更占资源。", int),
+                    ParamSpec("detect_fps", "普通检测频率", 1, 160, 1, "默认 YOLO 检测频率。", int),
+                    ParamSpec("firing_detect_fps", "开火检测频率", 1, 160, 1, "开火时 YOLO 检测频率。", int),
+                    ParamSpec("idle_detect_fps", "空闲检测频率", 1, 80, 1, "已激活但未开火时的低频检测。", int),
+                    ParamSpec("servo_loop_hz", "控制线程频率", 15, 240, 5, "鼠标控制输出频率。低于识别频率时移动更平滑。"),
+                    BoolSpec("idle_detect_enabled", "启用空闲降频", "未开火时降低检测频率，减少占用。"),
+                    BoolSpec("detect_only_new_frames", "只检测新截图帧", "避免同一帧画面被重复推理。"),
+                ],
+            ),
+            (
+                "模型/GPU",
+                [
+                    ChoiceSpec("yolo_device", "推理设备", ("auto", "cuda", "cpu"), "auto 优先 CUDA；cuda 会请求 GPU，不可用时回退 CPU。"),
+                    BoolSpec("yolo_half", "半精度推理", "CUDA 上使用 FP16，提高速度并降低显存占用。CPU 会自动禁用。"),
+                    ParamSpec("yolo_imgsz", "YOLO 输入尺寸", 256, 960, 32, "越大越准但越慢。更改后立即影响后续推理。", int),
+                    ParamSpec("yolo_conf_threshold", "置信度阈值", 0.05, 0.95, 0.01, "越高越保守，越低越容易检测到但误检更多。"),
+                    ParamSpec("yolo_iou_threshold", "NMS IOU 阈值", 0.1, 0.9, 0.01, "控制重叠框合并强度。"),
+                ],
+            ),
+            (
+                "控制平滑",
+                [
+                    ParamSpec("servo_output_gain", "整体输出增益", 0.2, 3.0, 0.01, "整体放大/缩小鼠标移动量。大了更跟手，也更容易过冲。"),
+                    ParamSpec("servo_step_limit", "单步最大输出", 4, 120, 1, "每个控制 tick 最多发送多少像素位移。决定瞬间追赶上限。", int),
+                    ParamSpec("servo_max_speed", "最大速度", 500, 12000, 100, "控制器内部速度上限。限制远距离追赶的最高速度。"),
+                    ParamSpec("servo_max_accel", "最大加速度", 1000, 60000, 500, "控制器内部加速度上限。降低后移动更柔和。"),
+                    ParamSpec("servo_arrival_radius", "到达半径", 5, 250, 1, "进入该范围后开始更明显地减速。"),
+                    ParamSpec("servo_near_brake", "近场刹车", 0, 1.5, 0.01, "靠近目标后的额外刹车强度。"),
+                    ParamSpec("servo_deadzone", "死区", 0, 10, 0.1, "误差小于该值时停止输出。小了更准，大了更稳。"),
+                ],
+            ),
+            (
+                "目标行为",
+                [
+                    ParamSpec("aim_target_preference", "头/人倾向", 0, 1, 0.01, "1 更偏 head，0 更偏 person。"),
+                    ParamSpec("aim_smooth_factor", "瞄点平滑", 0.05, 1.0, 0.01, "越低越稳但越慢，越高越跟手。"),
+                    ParamSpec("target_stickiness", "目标粘性", 0, 1, 0.01, "提高后更不容易在多个目标间跳。"),
+                    ParamSpec("target_history_radius", "历史半径", 10, 300, 5, "判定同一目标连续性的范围。", int),
+                    ParamSpec("target_switch_margin", "切换门槛", 0, 0.5, 0.01, "新目标需要比旧目标好多少才切换。"),
+                    ParamSpec("target_class_switch_penalty", "类别切换惩罚", 0, 0.5, 0.01, "head/person 类别切换时的额外惩罚。"),
+                    ParamSpec("head_bias", "Person 头部偏置", 0.05, 0.55, 0.01, "person 框内估算头部位置的高度比例。"),
+                ],
+            ),
+            (
+                "高级-FPS 控制",
                 [
                     BoolSpec("mouse_absolute_mode_enabled", "绝对移动测试", "直接把系统鼠标移动到瞄准点。只用于验证瞄点坐标，不适合多数 Raw Input 游戏视角。"),
                     ParamSpec("mouse_absolute_smooth_factor", "绝对移动平滑", 0.05, 1.0, 0.01, "绝对移动每次接近瞄准点的比例。1 表示直接跳到瞄准点。"),
                     ParamSpec("mouse_absolute_max_step", "绝对移动步长", 0, 500, 5, "绝对移动单次最大像素。0 表示不限制，直接按平滑比例移动。"),
-                    ParamSpec("servo_output_gain", "整体输出增益", 0.2, 3.0, 0.01, "整体放大/缩小鼠标移动量。大了更跟手，也更容易过冲。"),
-                    ParamSpec("servo_step_limit", "单步最大输出", 4, 120, 1, "每个控制 tick 最多发送多少像素位移。决定瞬间追赶上限。", int),
-                    ParamSpec("servo_loop_hz", "控制线程频率", 60, 500, 5, "鼠标控制线程频率。过高会增加 CPU 调度压力。"),
-                ],
-            ),
-            (
-                "近场刹车",
-                [
-                    ParamSpec("servo_deadzone", "死区", 0, 10, 0.1, "误差小于该值时停止输出。小了更准，大了更稳。"),
-                    BoolSpec("servo_overshoot_guard_enabled", "启用防越界", "根据剩余误差动态限制单次鼠标输出，减少越过目标后的往返摆动。"),
-                    ParamSpec("servo_overshoot_guard_radius", "防越界半径", 5, 160, 1, "误差进入该范围后开始按距离限制输出。增大会更早收手。"),
-                    ParamSpec("servo_overshoot_guard_ratio", "防越界比例", 0.05, 1.0, 0.01, "单次输出最多消耗剩余误差的比例。降低会更稳，提高会更快。"),
-                    ParamSpec("servo_overshoot_guard_min_step", "最小弹动量", 0, 5, 0.1, "防越界限制下允许的最小单次输出。为 0 时近点更稳。"),
-                    ParamSpec("servo_overshoot_guard_deadzone_scale", "停止死区倍率", 1.0, 3.0, 0.05, "误差小于死区乘以该倍率时清空惯性并停止输出。"),
-                ],
-            ),
-            (
-                "FPS 控制",
-                [
                     ParamSpec("fps_acceleration", "速度追随", 1, 120, 1, "速度状态追随目标速度的快慢。提高后吸附更明显，也更容易冲。"),
                     ParamSpec("fps_speed_gain", "距离速度增益", 1, 100, 1, "根据剩余距离生成目标速度。提高后远距离吸附更强。"),
                     ParamSpec("fps_min_speed", "最小速度", 0, 1200, 10, "误差较小时仍保留的最低速度。近点摆动时保持 0。"),
@@ -275,7 +337,19 @@ class ConfigWindow:
                 ],
             ),
             (
-                "预测跟踪",
+                "高级-近场与防越界",
+                [
+                    BoolSpec("servo_overshoot_guard_enabled", "启用防越界", "根据剩余误差动态限制单次鼠标输出，减少越过目标后的往返摆动。"),
+                    ParamSpec("servo_overshoot_guard_radius", "防越界半径", 5, 160, 1, "误差进入该范围后开始按距离限制输出。增大会更早收手。"),
+                    ParamSpec("servo_overshoot_guard_ratio", "防越界比例", 0.05, 1.0, 0.01, "单次输出最多消耗剩余误差的比例。降低会更稳，提高会更快。"),
+                    ParamSpec("servo_overshoot_guard_min_step", "最小弹动量", 0, 5, 0.1, "防越界限制下允许的最小单次输出。为 0 时近点更稳。"),
+                    ParamSpec("servo_overshoot_guard_deadzone_scale", "停止死区倍率", 1.0, 3.0, 0.05, "误差小于死区乘以该倍率时清空惯性并停止输出。"),
+                    ParamSpec("aim_switch_distance", "大跳变距离", 10, 220, 1, "超过该距离认为目标/瞄点发生切换。"),
+                    ParamSpec("aim_switch_smooth_factor", "切换平滑", 0.05, 0.8, 0.01, "大跳变时使用的低速平滑因子。"),
+                ],
+            ),
+            (
+                "高级-预测跟踪",
                 [
                     BoolSpec("tracker_enabled", "启用目标预测", "用位置差分速度预测短期目标位置。"),
                     ParamSpec("tracker_prediction_time", "预测时间", 0, 0.12, 0.001, "预测未来多少秒。提高能提前量更多，也更容易误判。"),
@@ -290,36 +364,7 @@ class ConfigWindow:
                 ],
             ),
             (
-                "检测节奏",
-                [
-                    ParamSpec("runtime_poll_fps", "主轮询频率", 30, 300, 5, "主循环喂控制目标的频率，不等于 YOLO 推理频率。", int),
-                    ParamSpec("capture_fps", "截图频率", 5, 120, 1, "截图线程采样频率。高了更及时，也更占资源。", int),
-                    ParamSpec("detect_fps", "普通检测频率", 1, 120, 1, "默认 YOLO 检测频率。", int),
-                    ParamSpec("firing_detect_fps", "开火检测频率", 1, 120, 1, "开火时 YOLO 检测频率。", int),
-                    ParamSpec("idle_detect_fps", "空闲检测频率", 1, 60, 1, "已激活但未开火时的低频检测。", int),
-                    BoolSpec("idle_detect_enabled", "启用空闲降频", "未开火时降低检测频率，减少占用。"),
-                    BoolSpec("detect_only_new_frames", "只检测新截图帧", "避免同一帧画面被重复推理。"),
-                    ParamSpec("yolo_imgsz", "YOLO 输入尺寸", 256, 960, 32, "越大越准但越慢。更改后立即影响后续推理。", int),
-                    ParamSpec("yolo_conf_threshold", "置信度阈值", 0.05, 0.95, 0.01, "越高越保守，越低越容易检测到但误检更多。"),
-                    ParamSpec("yolo_iou_threshold", "NMS IOU 阈值", 0.1, 0.9, 0.01, "控制重叠框合并强度。"),
-                ],
-            ),
-            (
-                "瞄点与目标",
-                [
-                    ParamSpec("aim_target_preference", "头/人倾向", 0, 1, 0.01, "1 更偏 head，0 更偏 person。"),
-                    ParamSpec("aim_smooth_factor", "瞄点平滑", 0.05, 1.0, 0.01, "越低越稳但越慢，越高越跟手。"),
-                    ParamSpec("aim_switch_distance", "大跳变距离", 10, 220, 1, "超过该距离认为目标/瞄点发生切换。"),
-                    ParamSpec("aim_switch_smooth_factor", "切换平滑", 0.05, 0.8, 0.01, "大跳变时使用的低速平滑因子。"),
-                    ParamSpec("target_stickiness", "目标粘性", 0, 1, 0.01, "提高后更不容易在多个目标间跳。"),
-                    ParamSpec("target_history_radius", "历史半径", 10, 300, 5, "判定同一目标连续性的范围。", int),
-                    ParamSpec("target_switch_margin", "切换门槛", 0, 0.5, 0.01, "新目标需要比旧目标好多少才切换。"),
-                    ParamSpec("target_class_switch_penalty", "类别切换惩罚", 0, 0.5, 0.01, "head/person 类别切换时的额外惩罚。"),
-                    ParamSpec("head_bias", "Person 头部偏置", 0.05, 0.55, 0.01, "person 框内估算头部位置的高度比例。"),
-                ],
-            ),
-            (
-                "定点射击",
+                "高级-定点射击",
                 [
                     ParamSpec("firing_anchor_hold_ms", "定点锁定时间", 0, 800, 10, "开火后固定锁点的时间。提高后更像定点射击，降低后更容易跟随移动目标。"),
                     ParamSpec("firing_micro_deadzone", "开火微动死区", 0, 30, 0.5, "开火时忽略小于该范围的瞄点抖动，减少枪口左右摆。"),

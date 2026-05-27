@@ -16,6 +16,7 @@ class ScreenCapture:
         if roi_offset is None:
             return None
         roi_left, roi_top = roi_offset
+        # 截图ROI区域
         monitor = {
             "left": roi_left,
             "top": roi_top,
@@ -23,7 +24,9 @@ class ScreenCapture:
             "height": self.config.roi_height
         }
         try:
+            # 截图
             img = self.sct.grab(monitor)
+            # 转换为NumPy数组
             frame = np.array(img)[:, :, :3]
             self.fail_count = 0
             return frame

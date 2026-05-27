@@ -52,7 +52,7 @@ class CaptureWorker:
                     sleep_precise(0.01)
                     last_capture = 0.0
                     continue
-
+                # 控制截图频率
                 capture_fps = max(1.0, float(getattr(self.config, "capture_fps", 30)))
                 interval = 1.0 / capture_fps
                 now = time.perf_counter()

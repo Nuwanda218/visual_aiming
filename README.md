@@ -1,186 +1,387 @@
-# visual-assisted-aiming
+# 视觉辅助瞄准系统
 
-这是一个基于 YOLOv8 的实时视觉辅助瞄准实验项目。当前主链路是：
+基于 YOLOv8 的实时视觉辅助瞄准实验项目。
 
-```text
-固定 ROI 截图 -> YOLOv8 head/person 检测 -> 类别感知瞄点计算 -> FPS 风格速度控制 -> 鼠标相对位移输出
+## 📋 目录
+
+- [项目概述](#项目概述)
+- [核心架构](#核心架构)
+- [模块详解](#模块详解)
+- [配置参数说明](#配置参数说明)
+- [运行指南](#运行指南)
+- [技术选型](#技术选型)
+- [潜在问题与优化建议](#潜在问题与优化建议)
+
+---
+
+## 🎯 项目概述
+
+### 核心流程
+
+```
+固定 ROI 截图 → YOLOv8 目标检测 → 类别感知瞄点计算 → 目标追踪预测 → FPS 风格速度控制 → 鼠标相对位移输出
 ```
 
-项目仍处于快速迭代阶段，当前重点是目标选择稳定性、瞄点平滑、长按持续吸附、定点射击控制和 GPU 推理性能。
+### 主要特性
 
-## 目录结构
+| 特性 | 说明 |
+|------|------|
+| 实时检测 | 基于 YOLOv8 进行 head/person 检测 |
+| 目标追踪 | EMA 速度预测，提升瞄准稳定性 |
+| 智能瞄点 | 针对头部/人物的不同瞄点计算策略 |
+| FPS 风格控制 | 使用独立伺服线程按低频平滑输出鼠标相对位移 |
+| 状态机管理 | 激活/开火状态的精确控制 |
+| 节流机制 | 时间/概率双重节流，防沉迷设计 |
 
-```text
-.
-├── main.py                       # 稳定启动入口，负责把 src 加入 import path 并调用 visual_aiming.app
-├── config.json                   # 本地运行配置，配置窗口会自动写回这里
-├── requirements.txt              # Python 运行依赖
-├── README.md                     # 项目说明和当前结构导览
-├── models/
-│   └── best.pt                   # YOLOv8 训练权重
-├── src/
-│   └── visual_aiming/
-│       ├── __init__.py
-│       ├── app.py                # 兼容入口，转发到 core.runtime.main()
-│       ├── config.py             # Config dataclass，保存所有默认参数
-│       ├── core/                 # 中间接口模块：主程序、调度、瞄点处理、目标预测
-│       │   ├── runtime.py        # 当前主运行循环，串起视觉模块和操作模块
-│       │   ├── aim_calculator.py # 检测框到屏幕瞄点的映射、平滑、开火锁点
-│       │   ├── target_tracker.py # 轻量目标速度预测：差分速度、EMA、反向重置
-│       │   ├── detect_scheduler.py # 检测频率调度：普通/开火/空闲节奏
-│       │   └── throttle.py       # 时间节流工具，控制部分检测节奏
-│       ├── vision/               # 视觉模块：截图、YOLO 推理、检测结果输出
-│       │   ├── screen_capture.py # 同步 ROI 截图实现
-│       │   ├── capture_worker.py # 独立截图线程，缓存最新 ROI 帧
-│       │   └── detection.py      # YOLOv8 加载、推理、目标选择和检测结果缓存
-│       ├── actions/              # 操作模块：鼠标、键鼠状态、调试 UI
-│       │   ├── input_listener.py # 键鼠状态监听：Shift/右键/左键/Ctrl+Q
-│       │   ├── mouse_control.py  # FPS 风格鼠标控制、相对位移输出、绝对移动测试模式
-│       │   ├── debug_visualizer.py # OpenCV 调试窗口，显示检测框和瞄点
-│       │   ├── config_window.py  # Tkinter 运行时参数窗口，修改后自动保存 config.json
-│       │   └── visual_servo.py   # 旧视觉伺服控制器，当前保留作参考/回退
-│       └── common/               # 通用工具
-│           ├── timing.py         # 精确 sleep 工具
-│           ├── resource_path.py  # 资源路径辅助，兼容打包环境
-│           └── utils.py          # 通用工具，目前主要是限频打印
-├── scripts/
-│   └── build_exe.py              # PyInstaller 构建脚本
-├── packaging/
-│   └── aim_assist.spec           # PyInstaller spec 文件
-└── docs/
-    └── PROJECT_STRUCTURE.md      # 简版项目结构说明
+---
+
+## 🏗️ 核心架构
+
+### 模块分层
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        UI 层                                    │
+│  config_window.py │ debug_visualizer.py                         │
+├─────────────────────────────────────────────────────────────────┤
+│                      控制层                                      │
+│  mouse_control.py │ input_listener.py                           │
+├─────────────────────────────────────────────────────────────────┤
+│                      核心层                                      │
+│  runtime.py │ pipeline.py │ aim_calculator.py │ target_tracker.py│
+├─────────────────────────────────────────────────────────────────┤
+│                      视觉层                                      │
+│  detection.py │ capture_worker.py │ screen_capture.py           │
+├─────────────────────────────────────────────────────────────────┤
+│                      工具层                                      │
+│  timing.py │ resource_path.py │ utils.py                        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-更详细的文件说明见 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)。
+### 数据流
 
-`test.py` 是本地未跟踪测试文件，不属于正式项目结构。
-
-## 运行
-
-先确认 VSCode/Python 解释器指向项目虚拟环境：
-
-```powershell
-.\.venv\Scripts\python.exe -c "import torch; print(torch.cuda.is_available())"
+```
+【后台线程】CaptureWorker 截图
+    ↓
+【主循环】120 FPS 轮询
+    ↓
+DetectionScheduler 判断是否检测
+    ↓
+TargetDetector (YOLOv8) 推理
+    ↓
+RuntimePipeline 处理检测结果
+    ↓
+AimCalculator 计算瞄点
+    ↓
+TargetTracker 速度预测 / 复用最近瞄点
+    ↓
+MouseController 以 servo_loop_hz 采样并输出鼠标位移
 ```
 
-启动：
+---
 
-```powershell
-python .\main.py
+## 📦 模块详解
+
+### 1. 主程序入口 (`main.py`)
+
+```python
+def main():
+    # 1. 检查管理员权限
+    # 2. 加载配置
+    # 3. 初始化服务
+    # 4. 启动主循环
 ```
 
-程序需要管理员权限。当前 `main.py` 会在非管理员启动时自动请求提权。
+### 2. 运行时核心 (`core/runtime.py`)
 
-## 关键配置
+**核心职责：**
+- 主循环控制（120 FPS）
+- 服务生命周期管理
+- 状态转换协调
 
-主要参数在 `config.json`：
+**关键函数：**
+| 函数 | 作用 |
+|------|------|
+| `_run_loop()` | 主循环，协调所有模块 |
+| `_update_detection_and_control()` | 检测与控制核心逻辑 |
+| `_should_detect()` | 判断是否执行检测 |
+| `_sleep_for_poll_interval()` | 精确延时，稳定帧率 |
 
-- `yolo_device`: `auto` 时优先使用 CUDA
-- `yolo_imgsz`: YOLO 推理尺寸
-- `aim_target_preference`: 越接近 `1.0` 越偏向 head，越接近 `0.0` 越偏向 person
-- `target_stickiness`: 目标连续性权重，降低多目标快速切换
-- `capture_thread_enabled`: 启用独立截图线程
-- `runtime_poll_fps`: 主状态轮询/目标喂给频率
-- `detect_fps`: 主检测循环频率，和 `capture_fps` 分开调
-- `firing_detect_fps`: 开火时检测频率
-- `idle_detect_fps`: 已激活但未开火时的空闲检测频率
-- `detect_only_new_frames`: 只对新的截图帧做推理，避免重复跑同一帧
-- `tracker_*`: 轻量目标速度预测参数
-- `fps_*`: 鼠标速度状态、加速度、减速半径和近场刹车参数
-- `servo_output_gain` / `servo_step_limit` / `servo_loop_hz`: 最终鼠标输出和控制线程参数
-- `mouse_absolute_mode_enabled`: 绝对移动测试模式，直接把系统鼠标移到瞄准点，用于排查瞄点坐标问题
-- `servo_overshoot_guard_*`: 近距离防越界输出限制，减少左右/上下摆动
-- `firing_*`: 开火时的锁点、微动死区和跟随参数
-- `debug_enabled`: 调试窗口开关
-- `config_ui_enabled`: 运行时参数面板开关
+### 3. 服务容器 (`core/runtime_services.py`)
 
-## 当前架构
+**设计模式：服务容器（Service Container）**
 
-当前代码已经按三层结构拆分：视觉模块、核心接口模块、操作模块。核心调度集中在 `src/visual_aiming/core/runtime.py`。
+统一管理所有模块实例，避免全局变量，便于测试和维护。
 
-### 启动层
+### 4. 处理管道 (`core/pipeline.py`)
 
-- `main.py`: 兼容启动入口。正常运行时从这里启动。
-- `src/visual_aiming/app.py`: 兼容入口，转发到 `core.runtime.main()`。
-- `src/visual_aiming/core/runtime.py`: 当前真正的程序主体。负责管理员权限检查、加载配置、初始化各模块、运行主循环和退出清理。
-- `src/visual_aiming/config.py`: 默认配置定义。
-- `config.json`: 当前本地实际运行配置。程序启动时读取，配置窗口修改后写回。
-- `src/visual_aiming/actions/config_window.py`: 运行时配置面板，负责把参数实时写入 `Config` 对象并自动保存。
+**核心职责：** 连接检测、瞄点计算、目标追踪和控制目标发布
 
-### 视觉模块
-
-视觉模块只负责“看见什么”，不直接控制鼠标。
-
-- `src/visual_aiming/vision/screen_capture.py`: 同步截图实现。
-- `src/visual_aiming/vision/capture_worker.py`: 独立截图线程。主循环只读取最新帧，减少截图阻塞。
-- `src/visual_aiming/vision/detection.py`: YOLOv8 模型加载与推理。它把 ROI 图像变成目标框，并根据 `head/person`、置信度、目标粘性选择当前目标。
-- `models/best.pt`: 当前 YOLO 模型权重。
-
-### 核心接口模块
-
-核心接口模块是主程序所在层，负责接收视觉模块输出，计算瞄点和控制目标，再把操作指令交给操作模块。
-
-- `src/visual_aiming/core/runtime.py`: 运行时调度中心，连接视觉模块和操作模块。
-- `src/visual_aiming/core/detect_scheduler.py`: 检测调度器，根据 active/firing/idle 状态决定什么时候跑 YOLO。
-- `src/visual_aiming/core/throttle.py`: 额外节流工具，避免检测过密。
-- `src/visual_aiming/core/aim_calculator.py`: 把检测框转成屏幕坐标瞄点。这里处理 `head/person` 的瞄准倾向、平滑、大跳变切换、开火锁点、微动死区。
-- `src/visual_aiming/core/target_tracker.py`: 目标速度预测器。使用位置差分、EMA、小速度清零和反向重置，减少目标短暂丢失或移动时的跳变。
-
-### 操作模块
-
-操作模块只负责“实际做什么”，包括读取设备输入、鼠标输出、调试显示和配置窗口。
-
-- `src/visual_aiming/actions/input_listener.py`: 监听热键和鼠标状态。当前激活逻辑是 `Shift + 右键`，左键表示开火。
-- `src/visual_aiming/actions/mouse_control.py`: 当前主要鼠标控制模块。默认用 FPS 风格速度控制，把瞄点相对准星的误差转成鼠标相对位移。也支持 `mouse_absolute_mode_enabled`，直接把系统鼠标移动到瞄点，用于排查瞄点坐标是否正确。
-- `src/visual_aiming/actions/debug_visualizer.py`: 调试窗口，显示当前 ROI、检测框和瞄点。
-- `src/visual_aiming/actions/config_window.py`: 运行时配置面板。
-- `src/visual_aiming/actions/visual_servo.py`: 旧视觉伺服控制器。当前主链路不直接使用，保留用于参考或回退。
-
-### 通用模块
-
-- `src/visual_aiming/common/timing.py`: 高精度 sleep。
-- `src/visual_aiming/common/utils.py`: 限频打印等小工具。
-- `src/visual_aiming/common/resource_path.py`: 资源路径辅助，主要服务打包场景。
-- `scripts/build_exe.py` / `packaging/aim_assist.spec`: 打包相关文件。
-
-## 运行时数据流
-
-当前主循环可以按这条链路理解：
-
-```text
-main.py
-  -> core.runtime.main()
-  -> Config.load(config.json)
-  -> WakeUpModule 监听激活/开火状态
-  -> CaptureWorker 持续截图固定 ROI
-  -> DetectionScheduler 决定是否执行检测
-  -> TargetDetector.detect(frame)
-  -> AimPointCalculator.calculate(target)
-  -> TargetTracker.update/predict()
-  -> MouseController.update_target()
-  -> mouse_event 相对位移输出
+```python
+def process_detection():
+    # 1. 计算瞄点
+    # 2. 更新追踪器
+    # 3. 更新最新瞄点
+    # 4. 生成 ControlTarget
 ```
 
-开调试窗口时，检测框和瞄点会同时传给：
+### 5. 目标追踪器 (`core/target_tracker.py`)
 
-```text
-DebugVisualizer.update(frame, bbox, aim_point, crosshair)
+**算法：指数移动平均（EMA）**
+
+```
+predicted_position = (1 - alpha) * history + alpha * current
 ```
 
-## 当前状态与重构切入点
+**参数：**
+- `tracker_smoothing_factor`: EMA 平滑系数（0.66）
+- `tracker_prediction_time`: 预测时间窗口（0.025s）
+- `tracker_stop_threshold`: 静止判定阈值（10像素）
 
-现在已经完成了第一步文件结构拆分，但 `core/runtime.py` 内部仍然是一个较大的主循环。后续重构时，建议继续保持外部行为不变，只把核心层内部职责拆细：
+### 6. 检测调度器 (`core/detect_scheduler.py`)
 
-- `RuntimeState`: active/firing/last_aim/last_capture_seq 等运行状态
-- `RuntimeServices`: detector/capture/mouse/debug/config_ui 等模块实例
-- `Pipeline`: 视觉输出 -> 瞄点 -> 操作指令
-- `schemas.py`: DetectionResult/AimPoint/ControlCommand 等数据结构
+**状态频率控制：**
 
-## 维护建议
+| 状态 | FPS | 配置项 |
+|------|-----|--------|
+| 普通激活 | 30 | `detect_fps` |
+| 开火吸附 | 30 | `firing_detect_fps` |
+| 空闲状态 | 8 | `idle_detect_fps` |
 
-重构后优先保持根目录 `main.py` 兼容入口不变。后续如果继续拆分，建议按功能边界拆：
+### 7. 节流器 (`core/throttle.py`)
 
-- 视觉模块：截图、检测、目标选择
-- 核心接口模块：类别映射、平滑、目标锁定、调度状态
-- 操作模块：鼠标输出、调试窗口、配置窗口
-- 工具层：数据集、调参、打包
+**双重节流机制：**
+
+1. **概率节流**：`adsorb_prob`（默认 0.8）控制每次吸附概率
+2. **时间节流**：令牌桶算法，`cycle_duration` 周期内分配 `active_duration` 时间
+
+### 8. 视觉检测 (`vision/detection.py`)
+
+**YOLOv8 集成：**
+- 懒加载模型
+- `yolo_device=auto` 时优先使用 CUDA，CUDA 不可用时明确回退 CPU
+- `yolo_half` 只在 CUDA 运行时启用
+- 开发环境模型路径从项目根目录解析，例如 `models/best.pt`
+- 支持跳帧复用（`yolo_skip_frames`）
+- 置信度阈值过滤（`yolo_conf_threshold`）
+
+**⚠️ 待优化项：**
+- 目标选择机制（`_select_best_box`）：当前采用简单线性评分，后续计划引入卡尔曼滤波进行目标预测和多模态融合，提升跟踪稳定性和准确性。
+
+### 9. 目标选择机制（待优化）
+
+**当前实现：**
+- 基于距离、置信度、类别的线性评分模型
+- 粘性选择机制防止目标频繁切换
+- 支持目标连续性约束
+
+**后续优化方向：**
+- 引入卡尔曼滤波进行目标位置预测
+- 使用非线性评分函数（如高斯距离权重）
+- 支持多目标管理和优先级动态调整
+- 参考 DeepSORT 等先进跟踪算法
+
+### 10. 截图线程 (`vision/capture_worker.py`)
+
+**生产者-消费者模式：**
+- 后台线程持续截图（`capture_fps`）
+- 主循环按需获取最新帧
+- 线程安全的帧缓存
+
+### 11. 视觉与控制频率分离（当前 MVP）
+
+**当前实现：**
+- `capture_fps` 控制后台 ROI 截图频率
+- `detect_fps`、`firing_detect_fps`、`idle_detect_fps` 控制 YOLO 推理频率
+- `RuntimePipeline` 保存最近一次有效瞄点，并在没有新检测帧时提供可复用控制目标
+- `MouseController` 独立线程按 `servo_loop_hz` 采样最新控制目标，负责平滑速度、减速和制动
+
+**效果：**
+- 视觉端可以按检测能力尽量高频更新
+- 鼠标端不会每次检测都硬跳一次，而是按伺服频率连续输出
+- 后续插件化可以把边界收敛为 `VisionPlugin.process(frame) -> DetectionState` 和 `OutputPlugin.apply(ControlTarget)`
+
+**仍未实现：**
+- 动态插件加载器
+- TensorRT / ONNX Runtime 推理后端
+- 多目标管理器或 DeepSORT 级别的长期 ID 跟踪
+
+### 12. 鼠标控制 (`actions/mouse_control.py`)
+
+**FPS 风格速度控制:**
+- 距离感知速度曲线
+- 近目标减速（`fps_decel_radius` / `fps_near_speed_scale`）
+- 制动半径（`fps_brake_radius`）
+- 输出步长限制（`servo_step_limit`）
+
+---
+
+## ⚙️ 配置参数说明
+
+### 频率相关参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `runtime_poll_fps` | 120 | 主循环轮询频率 |
+| `capture_fps` | 30 | 后台截图频率 |
+| `detect_fps` | 30 | 普通状态检测频率 |
+| `firing_detect_fps` | 30 | 开火状态检测频率 |
+| `idle_detect_fps` | 8 | 空闲状态检测频率 |
+| `servo_loop_hz` | 240 | 伺服控制频率 |
+| `yolo_skip_frames` | 1 | 普通状态跳帧数 |
+| `firing_yolo_skip_frames` | 0 | 开火状态跳帧数 |
+
+### ROI 相关参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `roi_width` | 410 | 截图区域宽度 |
+| `roi_height` | 315 | 截图区域高度 |
+
+### 瞄点计算参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `head_bias` | 0.25 | 头部瞄点偏置（向上偏移） |
+| `aim_deadzone` | 8 | 瞄点死区（像素） |
+
+### 目标追踪参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `tracker_enabled` | true | 是否启用追踪器 |
+| `tracker_prediction_time` | 0.025 | 预测时间（秒） |
+| `tracker_smoothing_factor` | 0.66 | EMA 平滑系数 |
+| `tracker_stop_threshold` | 10.0 | 静止判定阈值 |
+| `tracker_reset_distance` | 200.0 | 追踪重置距离 |
+
+### FPS 速度控制参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `fps_speed_gain` | 42.0 | 速度增益 |
+| `fps_min_speed` | 0.0 | 最小速度 |
+| `fps_max_speed` | 7200.0 | 最大速度 |
+| `fps_decel_radius` | 135.0 | 减速半径 |
+| `fps_brake_radius` | 90.0 | 制动半径 |
+| `fps_brake` | 0.72 | 制动系数 |
+
+### YOLO 相关参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `yolo_model_path` | models/best.pt | 模型路径，相对项目根目录 |
+| `yolo_conf_threshold` | 0.5 | 置信度阈值 |
+| `yolo_iou_threshold` | 0.45 | IOU 阈值 |
+| `yolo_device` | auto | 推理设备 |
+| `yolo_half` | true | 是否使用半精度 |
+| `yolo_imgsz` | 416 | 推理图像尺寸 |
+
+### 节流控制参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `adsorb_prob` | 0.8 | 吸附概率 |
+| `cycle_duration` | 2.0 | 周期时长（秒） |
+| `active_duration` | 0.5 | 活跃时长（秒） |
+| `enable_time_throttle` | true | 是否启用时间节流 |
+
+### 调试参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `debug_enabled` | false | 是否启用调试窗口 |
+| `debug_log_enabled` | false | 是否启用调试日志 |
+| `debug_window_scale` | 1.2 | 调试窗口缩放 |
+
+---
+
+## 🚀 运行指南
+
+### 环境要求
+
+- Python 3.8+
+- Windows 10/11（需要管理员权限）
+- 支持 CUDA 的 GPU（推荐）
+
+### 依赖安装
+
+```bash
+pip install -r requirements.txt
+```
+
+### 运行命令
+
+```bash
+python main.py
+```
+
+**注意：程序会自动以管理员身份重启。**
+
+### 使用方法
+
+1. **激活辅助**：同时按住 `Shift + 右键`
+2. **开始吸附**：按下 `左键`
+3. **退出程序**：按 `Ctrl + Q`
+
+---
+
+## 🛠️ 技术选型
+
+### 核心技术栈
+
+| 技术 | 版本 | 用途 |
+|------|------|------|
+| Python | 3.8+ | 主开发语言 |
+| YOLOv8 | ultralytics | 目标检测 |
+| mss | latest | 屏幕截图 |
+| numpy | latest | 图像处理 |
+| OpenCV | latest | 调试可视化 |
+| pynput / ctypes | latest / stdlib | 热键监听与 Windows 鼠标控制 |
+
+### 设计模式
+
+| 模式 | 应用场景 |
+|------|----------|
+| 服务容器 | RuntimeServices |
+| 生产者-消费者 | CaptureWorker |
+| 状态机 | RuntimeState |
+| 策略模式 | 多种鼠标控制模式 |
+
+---
+
+## ⚠️ 潜在问题与优化建议
+
+### 已知问题
+
+1. **Windows 权限问题**：真实鼠标控制通常需要管理员权限
+2. **CUDA 可用性**：`yolo_device=auto` 会优先 CUDA；没有 CUDA 时自动回退 CPU，性能会下降
+3. **GPU 内存占用**：YOLOv8 模型加载占用显存，具体取决于模型和 `yolo_imgsz`
+4. **高频负载**：提高 `capture_fps`、`detect_fps` 或 `servo_loop_hz` 会增加 CPU/GPU 占用
+5. **插件化状态**：当前已经稳定三层边界，但还没有动态插件发现、加载和元数据管理
+
+### 优化建议
+
+1. **模型优化**：使用 TensorRT 或 ONNX Runtime 加速推理
+2. **动态帧率**：根据 GPU 负载自动调整检测频率
+3. **内存优化**：帧缓存采用循环缓冲区，避免内存泄漏
+4. **多线程优化**：进一步分离截图、检测、控制和 UI 调度
+5. **插件系统**：在当前 `vision / core / actions` 边界上增加 `VisionPlugin` 与 `OutputPlugin`
+
+---
+
+## 📝 版本历史
+
+| 版本 | 日期 | 更新内容 |
+|------|------|----------|
+| v1.0 | 2026-04 | 初始版本，YOLOv8 集成 |
+
+---
+
+## 📄 许可证
+
+MIT License
+
+---
+
+*项目仍处于快速迭代阶段，欢迎提交 Issue 和 PR。*

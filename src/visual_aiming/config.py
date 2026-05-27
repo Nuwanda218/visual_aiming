@@ -121,7 +121,7 @@ class Config:
     yolo_preload: bool = False
     debug_enabled: bool = False
     debug_log_enabled: bool = False
-    debug_window_scale: float = 1.6
+    debug_window_scale: float = 0.8
     config_ui_enabled: bool = True
     config_ui_autosave_ms: int = 350
 

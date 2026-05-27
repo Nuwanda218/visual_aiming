@@ -2,7 +2,6 @@
 import ctypes
 import ctypes.wintypes
 import math
-import random
 import threading
 import time
 from typing import Optional, Tuple
@@ -27,11 +26,6 @@ def get_cursor_pos() -> Tuple[int, int]:
     pt = ctypes.wintypes.POINT()
     user32.GetCursorPos(ctypes.byref(pt))
     return (pt.x, pt.y)
-
-
-def smoothstep(value: float) -> float:
-    value = max(0.0, min(1.0, value))
-    return value * value * (3.0 - 2.0 * value)
 
 
 class MouseController:
@@ -238,25 +232,8 @@ class MouseController:
 
     def _accept_measurement(self, measurement: Tuple[float, float]):
         mx, my = measurement
-        measurement_distance = math.hypot(mx, my)
-        current_distance = math.hypot(self.error_x, self.error_y)
-        reacquire_distance = max(1.0, float(getattr(self.config, "fps_reacquire_distance", 180.0)))
-
-        if not self.has_error or abs(measurement_distance - current_distance) >= reacquire_distance:
-            self.error_x = mx
-            self.error_y = my
-            self.velocity_x = 0.0
-            self.velocity_y = 0.0
-            self.has_error = True
-            return
-
-        if self.velocity_x * mx + self.velocity_y * my < 0.0:
-            self.velocity_x = 0.0
-            self.velocity_y = 0.0
-
-        blend = max(0.0, min(1.0, float(getattr(self.config, "fps_measurement_blend", 0.85))))
-        self.error_x = self.error_x * (1.0 - blend) + mx * blend
-        self.error_y = self.error_y * (1.0 - blend) + my * blend
+        self.error_x = mx
+        self.error_y = my
         self.has_error = True
 
     def _compute_move(self, dt: float) -> Tuple[int, int]:
@@ -269,11 +246,6 @@ class MouseController:
             return (0, 0)
 
         angle = math.atan2(self.error_y, self.error_x)
-        jitter_angle = max(0.0, float(getattr(self.config, "fps_jitter_angle", 0.0)))
-        if jitter_angle > 0.0:
-            jitter_distance = max(1.0, float(getattr(self.config, "fps_jitter_distance", 180.0)))
-            angle += random.uniform(-jitter_angle, jitter_angle) * min(1.0, distance / jitter_distance)
-
         speed_gain = max(0.0, float(getattr(self.config, "fps_speed_gain", 42.0)))
         min_speed = max(0.0, float(getattr(self.config, "fps_min_speed", 0.0)))
         max_speed = max(min_speed, float(getattr(self.config, "fps_max_speed", 7200.0)))
@@ -281,21 +253,21 @@ class MouseController:
 
         decel_radius = max(deadzone + 1.0, float(getattr(self.config, "fps_decel_radius", 135.0)))
         near_scale = max(0.01, min(1.0, float(getattr(self.config, "fps_near_speed_scale", 0.10))))
-        decel = smoothstep(distance / decel_radius)
-        target_speed *= near_scale + (1.0 - near_scale) * decel
+        if distance < decel_radius:
+            decel = max(0.0, min(1.0, distance / decel_radius))
+            target_speed *= near_scale + (1.0 - near_scale) * decel
 
         target_vel_x = math.cos(angle) * target_speed
         target_vel_y = math.sin(angle) * target_speed
-        accel = max(0.1, float(getattr(self.config, "fps_acceleration", 52.0)))
-        alpha = 1.0 - math.exp(-accel * dt)
+        accel = max(0.0, float(getattr(self.config, "fps_acceleration", 52.0)))
+        alpha = max(0.0, min(1.0, accel * dt))
         self.velocity_x += (target_vel_x - self.velocity_x) * alpha
         self.velocity_y += (target_vel_y - self.velocity_y) * alpha
 
         brake_radius = max(deadzone + 1.0, float(getattr(self.config, "fps_brake_radius", 90.0)))
         brake = max(0.0, float(getattr(self.config, "fps_brake", 0.72)))
         if distance < brake_radius and brake > 0.0:
-            brake_zone = 1.0 - smoothstep(distance / brake_radius)
-            retain = max(0.0, 1.0 - brake * brake_zone * dt * 60.0)
+            retain = max(0.0, 1.0 - brake * dt)
             self.velocity_x *= retain
             self.velocity_y *= retain
 
@@ -307,7 +279,6 @@ class MouseController:
 
         max_step = max(1, int(getattr(self.config, "servo_step_limit", 15)))
         move_x, move_y = self._clamp_length(move_x, move_y, float(max_step))
-        move_x, move_y = self._apply_overshoot_guard(move_x, move_y)
 
         move_x += self.subpixel_x
         move_y += self.subpixel_y
@@ -316,30 +287,6 @@ class MouseController:
         self.subpixel_x = move_x - send_x
         self.subpixel_y = move_y - send_y
         return (send_x, send_y)
-
-    def _apply_overshoot_guard(self, move_x: float, move_y: float) -> Tuple[float, float]:
-        if not bool(getattr(self.config, "servo_overshoot_guard_enabled", True)):
-            return move_x, move_y
-
-        distance = math.hypot(self.error_x, self.error_y)
-        deadzone = max(0.0, float(getattr(self.config, "servo_deadzone", 2.0)))
-        deadzone_scale = max(1.0, float(getattr(self.config, "servo_overshoot_guard_deadzone_scale", 1.45)))
-
-        if distance <= deadzone * deadzone_scale:
-            self._brake_to_stop()
-            return (0.0, 0.0)
-
-        radius = max(deadzone + 1.0, float(getattr(self.config, "servo_overshoot_guard_radius", 80.0)))
-        if distance >= radius:
-            return move_x, move_y
-
-        ratio = max(0.05, min(1.0, float(getattr(self.config, "servo_overshoot_guard_ratio", 0.30))))
-        min_step = max(0.0, float(getattr(self.config, "servo_overshoot_guard_min_step", 0.0)))
-        feedback_gain = max(0.05, abs(float(getattr(self.config, "servo_output_to_error_gain", 1.0))))
-
-        allowed_screen_delta = max(min_step, (distance - deadzone) * ratio)
-        allowed_mouse_delta = allowed_screen_delta / feedback_gain
-        return self._clamp_length(move_x, move_y, allowed_mouse_delta)
 
     def _apply_output_feedback(self, send_x: int, send_y: int, dt: float):
         feedback_gain = float(getattr(self.config, "servo_output_to_error_gain", 1.0))

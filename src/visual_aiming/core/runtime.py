@@ -6,10 +6,10 @@ from typing import Optional, Tuple
 
 import mss
 
-from ..config import Config
-from ..common.timing import sleep_precise
-from .runtime_services import RuntimeServices
-from .schemas import ControlTarget
+from ..config import Config #导入配置类，用于加载和保存配置文件
+from ..common.timing import sleep_precise #导入时间工具函数，用于精确控制程序运行时间
+from .runtime_services import RuntimeServices #导入运行服务类，用于管理程序运行时的资源
+from .schemas import ControlTarget #导入控制目标枚举类，用于定义程序控制的目标
 
 
 def is_admin():
@@ -17,12 +17,13 @@ def is_admin():
         return ctypes.windll.shell32.IsUserAnAdmin()
     except Exception:
         return False
-
+#管理员权限检测函数，确保鼠标控制可以在游戏内实现
 
 def main():
     if not is_admin():
         ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
         sys.exit()
+        #条件判断，如果不是管理员权限，就重新启动程序，但是以管理员权限运行
 
     config_path = "config.json"
     config = _load_config(config_path)
@@ -63,7 +64,7 @@ def _screen_geometry(config: Config) -> Tuple[int, int, Tuple[int, int], Tuple[i
     fixed_roi_top = (screen_height - config.roi_height) // 2
     crosshair = (screen_width // 2, screen_height // 2)
     return screen_width, screen_height, (fixed_roi_left, fixed_roi_top), crosshair
-
+#获取屏幕分辨率和固定截图区域的坐标
 
 def _print_startup(
     config: Config,
@@ -84,7 +85,7 @@ def _print_startup(
     else:
         print("调试窗口已关闭，可在 config.json 中将 debug_enabled 设为 true。")
 
-
+#这里是程序的主要循环，负责处理用户输入、检测目标、更新鼠标位置等任务
 def _run_loop(config: Config, services: RuntimeServices) -> None:
     last_time = time.perf_counter()
     while not services.wakeup.should_exit():
@@ -122,13 +123,13 @@ def _sleep_for_poll_interval(config: Config, last_time: float) -> float:
     if sleep_time > 0:
         sleep_precise(sleep_time)
     return time.perf_counter()
-
+#等待下一个轮询时间，确保程序在固定帧率下运行
 
 def _reset_inactive(services: RuntimeServices) -> None:
     services.pipeline.reset()
     services.detect_scheduler.reset()
     services.mouse_controller.reset()
-
+#重置程序状态，包括管道、检测器、鼠标控制器等
 
 def _update_firing_state(services: RuntimeServices) -> None:
     transition = services.state.update_firing(services.wakeup.get_left_held())
@@ -136,7 +137,7 @@ def _update_firing_state(services: RuntimeServices) -> None:
         print(f"[{time.strftime('%H:%M:%S')}] 吸附开始")
     elif transition == "stopped":
         print(f"[{time.strftime('%H:%M:%S')}] 吸附停止")
-
+#更新吸附状态，根据用户输入和当前状态判断是否开始或停止吸附
 
 def _update_detection_and_control(
     config: Config,
@@ -147,7 +148,7 @@ def _update_detection_and_control(
     if not _should_detect(config, services, active, services.state.firing):
         return services.pipeline.current_control(active=active, crosshair=crosshair)
 
-    frame, _, capture_seq = services.get_frame()
+    frame, _, capture_seq = services.get_frame()#获取当前帧和捕获序列号
     if _is_reused_frame(config, services, frame, capture_seq):
         return services.pipeline.current_control(active=active, crosshair=crosshair)
 
@@ -158,9 +159,10 @@ def _update_detection_and_control(
         services.state.last_capture_seq = capture_seq
 
     roi_center = (config.roi_width // 2, config.roi_height // 2)
-    target = services.detector.detect(frame, config, roi_center, firing=services.state.firing)
+    target = services.detector.detect(frame, config, roi_center, firing=services.state.firing)#交给yolo检测目标
     target_is_fresh = bool(getattr(services.detector, "last_result_fresh", True))
     roi_offset = services.wakeup.get_roi_offset()
+    # 处理检测结果
     result = services.pipeline.process_detection(
         active=active,
         firing=services.state.firing,
@@ -173,7 +175,7 @@ def _update_detection_and_control(
     _log_detection_debug(config, services, target, target_is_fresh, result.aim_point)
     _update_debug_window(services, frame, result.debug_bbox, result.aim_point, crosshair, roi_offset)
     return result.control
-
+#检测与控制核心
 
 def _should_detect(
     config: Config,

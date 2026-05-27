@@ -8,16 +8,17 @@ class AimPointCalculator:
     def __init__(self, config):
         self.config = config
         self.wakeup = None
-        self.locked_aim = None
-        self.locked_at = 0.0
-        self.track_lost_frames = 0
-        self._prev_aim_global = None
-        self._velocity = (0, 0)
+        self.locked_aim = None# 锁定的瞄准点
+        self.locked_at = 0.0# 锁定时间0.0   
+        self.track_lost_frames = 0# 丢失跟踪帧数0
+        self._prev_aim_global = None# 上一全局瞄准点None
+        self._velocity = (0, 0)# 速度(0, 0)
         self._refresh_runtime_config()
 
     def set_wakeup(self, wakeup):
         self.wakeup = wakeup
-
+    #核心计算函数，根据目标和ROI计算瞄准点
+    #返回值：瞄准点坐标，格式为(x, y)，None表示无有效目标
     def calculate(self, target, roi_left: int, roi_top: int) -> Optional[Tuple[int, int]]:
         self._refresh_runtime_config()
         if self.wakeup is not None:

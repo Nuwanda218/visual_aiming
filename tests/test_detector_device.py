@@ -1,7 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -9,11 +9,31 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from visual_aiming.common.resource_path import resource_path
 from visual_aiming.vision.detection import TargetDetector
 import torch
 
 
 class DetectorDeviceResolutionTest(unittest.TestCase):
+    def test_development_resource_path_resolves_from_project_root(self):
+        resolved = Path(resource_path("models/best.pt")).resolve()
+
+        self.assertEqual(resolved, (PROJECT_ROOT / "models" / "best.pt").resolve())
+
+    def test_load_model_records_resolved_model_path(self):
+        fake_model = Mock()
+        fake_model.names = {}
+
+        with patch("visual_aiming.vision.detection.YOLO", return_value=fake_model) as yolo:
+            with patch.object(torch.cuda, "is_available", return_value=False):
+                detector = TargetDetector()
+                detector.load_model("models/best.pt", device="auto", use_half=True)
+
+        expected = str((PROJECT_ROOT / "models" / "best.pt").resolve())
+        yolo.assert_called_once_with(expected)
+        self.assertEqual(detector.resolved_model_path, expected)
+        fake_model.to.assert_called_once_with("cpu")
+
     def test_auto_prefers_cuda_when_available(self):
         with patch.object(torch.cuda, "is_available", return_value=True):
             device, use_half = TargetDetector()._resolve_runtime_device("auto", True)

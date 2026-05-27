@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -66,6 +67,7 @@ class TargetDetector:
     def __init__(self):
         self.model = None
         self.model_path = None
+        self.resolved_model_path = None
         self.device = None
         self.requested_device = None
         self.class_names: Dict[int, str] = {}
@@ -82,6 +84,8 @@ class TargetDetector:
     def load_model(self, model_path: str, device: str = "cpu", use_half: bool = True):
         resolved_path = resource_path(model_path)
         runtime_device, use_half = self._resolve_runtime_device(device, use_half)
+        if not Path(resolved_path).exists():
+            raise FileNotFoundError(f"YOLO 模型文件不存在: {resolved_path}")
         print(
             f"[YOLO] 加载模型: {resolved_path} | requested_device={device} | "
             f"runtime_device={runtime_device} | half={use_half}"
@@ -89,6 +93,7 @@ class TargetDetector:
         self.model = YOLO(resolved_path)
         self.model.to(runtime_device)
         self.model_path = model_path
+        self.resolved_model_path = resolved_path
         self.requested_device = device
         self.device = runtime_device
         self.use_half = use_half
@@ -138,8 +143,9 @@ class TargetDetector:
             self.last_result = None
             self.last_result_fresh = False
             return None
-
+        # 提取检测框
         boxes = results[0].boxes if results else None
+        # 检查是否有检测框
         if boxes is None or len(boxes) == 0:
             self.last_result = None
             self.last_result_fresh = False
@@ -149,7 +155,7 @@ class TargetDetector:
             h, w = frame_bgr.shape[:2]
             roi_center = (w // 2, h // 2)
 
-        best_target = self._select_best_box(boxes, roi_center, config)
+        best_target = self._select_best_box(boxes, roi_center, config)# 选择最佳检测框
         self.last_result = best_target
         self.last_result_fresh = best_target is not None
         return best_target
@@ -204,16 +210,18 @@ class TargetDetector:
             )
         except Exception as exc:
             print(f"[YOLO] 模型预热失败: {exc}")
-
+    # 选择检测框
     def _select_best_box(self, boxes, roi_center: Tuple[int, int], config) -> Optional[DetectedTarget]:
         roi_cx, roi_cy = roi_center
         candidates = []
         max_distance_sq = max(1, roi_cx * roi_cx + roi_cy * roi_cy)
-        previous_target = self.last_result
+        previous_target = self.last_result# 上一检测框
         track_radius = max(1, int(getattr(config, "target_history_radius", 120)))
         track_radius_sq = track_radius * track_radius
 
         for box in boxes:
+            # 提取检测框坐标并转换为NumPy数组
+            # 转换为非整数
             x1, y1, x2, y2 = box.xyxy[0].detach().cpu().numpy().tolist()
             x = max(0, int(round(x1)))
             y = max(0, int(round(y1)))
@@ -228,8 +236,9 @@ class TargetDetector:
             cx = x + w // 2
             cy = y + h // 2
             distance_sq = (cx - roi_cx) ** 2 + (cy - roi_cy) ** 2
-
+            # 计算检测框与ROI中心的距离平方
             target = DetectedTarget((x, y, w, h), confidence, class_id, class_name)
+            # 计算检测框的分数
             base_score = self._score_target(config, class_id, confidence, distance_sq, max_distance_sq)
             total_score = self._apply_target_continuity(config, target, base_score, previous_target, track_radius_sq)
             previous_distance_sq = self._distance_to_previous_target_sq(target, previous_target)
@@ -244,9 +253,10 @@ class TargetDetector:
 
         if not candidates:
             return None
-
+        # 按分数排序
         candidates.sort(key=lambda item: item["score"])
         best_candidate = candidates[0]
+        # 选择粘性检测框，优先选择与上一检测框距离较小的检测框
         sticky_candidate = self._select_sticky_candidate(candidates, previous_target, track_radius_sq)
         if sticky_candidate is not None and sticky_candidate["target"] is not best_candidate["target"]:
             switch_margin = max(0.0, float(getattr(config, "target_switch_margin", 0.08)))

@@ -62,5 +62,32 @@ class ModularAppsTest(unittest.TestCase):
         self.assertEqual(results[1].sequence, 1)
 
 
+class ModularCliTest(unittest.TestCase):
+    def test_main_parser_accepts_modular_safe_flags(self):
+        # 把项目根目录加入路径以便 import main
+        if str(PROJECT_ROOT) not in sys.path:
+            sys.path.insert(0, str(PROJECT_ROOT))
+        from main import parse_args
+
+        args = parse_args(["--modular", "--video", "sample.mp4", "--output", "log", "--diagnostics", "run.jsonl"])
+
+        self.assertTrue(args.modular)
+        self.assertEqual(args.video, "sample.mp4")
+        self.assertEqual(args.output, "log")
+        self.assertEqual(args.diagnostics, "run.jsonl")
+        self.assertFalse(args.real_mouse)
+
+    def test_main_parser_accepts_explicit_real_mouse_flag(self):
+        if str(PROJECT_ROOT) not in sys.path:
+            sys.path.insert(0, str(PROJECT_ROOT))
+        from main import parse_args
+
+        args = parse_args(["--modular", "--real-mouse", "--output", "win_mouse"])
+
+        self.assertTrue(args.modular)
+        self.assertTrue(args.real_mouse)
+        self.assertEqual(args.output, "win_mouse")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,12 +12,14 @@ from visual_aiming.core.schemas import PipelineTickResult
 class JsonlDiagnostics:
     name = "jsonl"
 
-    def __init__(self, jsonl_path: str | Path, summary_path: Optional[str | Path] = None) -> None:
+    def __init__(self, jsonl_path: str | Path, summary_path: Optional[str | Path] = None, flush_interval: int = 16) -> None:
         self.jsonl_path = Path(jsonl_path)
         self.summary_path = Path(summary_path) if summary_path is not None else self.jsonl_path.with_suffix(".summary.json")
         self.jsonl_path.parent.mkdir(parents=True, exist_ok=True)
         self.summary_path.parent.mkdir(parents=True, exist_ok=True)
         self._handle = self.jsonl_path.open("w", encoding="utf-8")
+        self._flush_interval = max(1, flush_interval)
+        self._writes_since_flush = 0
         self.samples = 0
         self.noop_commands = 0
         self.max_command_magnitude = 0.0
@@ -30,7 +32,10 @@ class JsonlDiagnostics:
     def write(self, result: PipelineTickResult) -> None:
         record = self._record(result)
         self._handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-        self._handle.flush()
+        self._writes_since_flush += 1
+        if self._writes_since_flush >= self._flush_interval:
+            self._handle.flush()
+            self._writes_since_flush = 0
         self._accumulate(result)
 
     def __enter__(self):

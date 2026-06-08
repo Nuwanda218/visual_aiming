@@ -21,7 +21,16 @@ class TargetSelector:
             self.previous = None
             return SelectedTarget(detection=None, score=math.inf, reason="no_detections")
 
-        scored = [(self._score(item, roi_center), item) for item in candidates]
+        cx_roi, cy_roi = roi_center
+        max_distance = max(1.0, math.hypot(cx_roi, cy_roi))
+        preference = max(0.0, min(1.0, self.config.target_preference))
+        head_id = self.config.head_class_id
+        person_id = self.config.person_class_id
+
+        scored = [
+            (self._score_fast(item, cx_roi, cy_roi, max_distance, preference, head_id, person_id), item)
+            for item in candidates
+        ]
         scored.sort(key=lambda pair: pair[0][0])
         best_parts, best = scored[0]
 
@@ -45,13 +54,25 @@ class TargetSelector:
             reason="selected",
         )
 
-    def _score(self, detection: Detection, roi_center: Point) -> tuple[float, dict[str, float]]:
-        cx, cy = detection.center
-        distance = math.hypot(cx - roi_center[0], cy - roi_center[1])
-        max_distance = max(1.0, math.hypot(roi_center[0], roi_center[1]))
-        distance_score = min(1.0, distance / max_distance)
+    def _score_fast(
+        self, detection: Detection, cx_roi: int, cy_roi: int,
+        max_distance: float, preference: float, head_id: int, person_id: int,
+    ) -> tuple[float, dict[str, float]]:
+        """热路径评分——减少属性访问和函数调用"""
+        bbox = detection.bbox
+        cx = bbox[0] + bbox[2] // 2
+        cy = bbox[1] + bbox[3] // 2
+        dx = cx - cx_roi
+        dy = cy - cy_roi
+        distance_score = min(1.0, math.sqrt(dx * dx + dy * dy) / max_distance)
         confidence_score = 1.0 - max(0.0, min(1.0, detection.confidence))
-        class_score = self._class_score(detection)
+        class_id = detection.class_id
+        if class_id == head_id:
+            class_score = 1.0 - preference
+        elif class_id == person_id:
+            class_score = preference
+        else:
+            class_score = 1.5
         continuity = self._continuity_bonus(detection)
         switch_penalty = self._class_switch_penalty(detection)
         total = class_score * 0.60 + distance_score * 0.30 + confidence_score * 0.10 - continuity + switch_penalty
@@ -62,14 +83,6 @@ class TargetSelector:
             "continuity": -continuity,
             "switch_penalty": switch_penalty,
         }
-
-    def _class_score(self, detection: Detection) -> float:
-        preference = max(0.0, min(1.0, self.config.target_preference))
-        if detection.class_id == self.config.head_class_id:
-            return 1.0 - preference
-        if detection.class_id == self.config.person_class_id:
-            return preference
-        return 1.5
 
     def _continuity_bonus(self, detection: Detection) -> float:
         if self.previous is None:

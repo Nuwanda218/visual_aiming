@@ -54,6 +54,10 @@ class ModularPipeline:
         self.aim_strategy = AimStrategy(config.aim, config.target_selection.head_class_id)
         self.predictor = AlphaBetaPredictor(config.prediction)
         self.controller = RelativeController(config.control)
+        # 预计算不变量
+        self._detector_name = getattr(detector, "name", "detector")
+        self._output_name = getattr(output_backend, "name", "unknown")
+        self._dt = 1.0 / max(1.0, config.runtime.poll_fps)
 
     def reset(self) -> None:
         self.selector.reset()
@@ -67,7 +71,7 @@ class ModularPipeline:
 
         if not mode.active:
             self.reset()
-            detections = DetectionPacket(frame.sequence, [], 0.0, getattr(self.detector, "name", "detector"), fresh=False)
+            detections = DetectionPacket(frame.sequence, [], 0.0, self._detector_name, fresh=False)
             result = self._build_result(
                 frame=frame,
                 mode=mode,
@@ -87,7 +91,7 @@ class ModularPipeline:
         aim = self.aim_strategy.measure(selected.detection, frame.roi_offset, frame.crosshair)
         predicted = self.predictor.update(aim, mode, now)
         error = self._error_from_prediction(predicted, frame.crosshair)
-        command = self.controller.update(error, active=mode.active, dt=1.0 / max(1.0, self.config.runtime.poll_fps))
+        command = self.controller.update(error, active=mode.active, dt=self._dt)
         result = self._build_result(frame, mode, detections, selected, aim, predicted, command, started)
         self._publish(result)
         return result
@@ -108,7 +112,7 @@ class ModularPipeline:
             aim=aim,
             predicted=predicted,
             command=command,
-            output_backend=getattr(self.output_backend, "name", "unknown"),
+            output_backend=self._output_name,
             pipeline_latency_ms=latency_ms,
         )
 

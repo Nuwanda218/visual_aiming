@@ -28,7 +28,7 @@ class FramePacket:
     mode: RuntimeMode = field(default_factory=RuntimeMode)
 
 
-@dataclass
+@dataclass(slots=True)
 class Detection:
     bbox: BBox
     confidence: float = 0.0
@@ -53,7 +53,7 @@ class Detection:
 
     @property
     def center(self) -> Point:
-        return (self.x + self.w // 2, self.y + self.h // 2)
+        return (self.bbox[0] + self.bbox[2] // 2, self.bbox[1] + self.bbox[3] // 2)
 
 
 @dataclass

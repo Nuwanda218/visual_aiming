@@ -68,5 +68,59 @@ class AimStrategyTest(unittest.TestCase):
         self.assertFalse(measurement.valid)
 
 
+class PredictorTest(unittest.TestCase):
+    def test_predictor_tracks_velocity_and_predicts_forward(self):
+        from visual_aiming.algorithms.prediction import AlphaBetaPredictor
+
+        predictor = AlphaBetaPredictor(PredictionConfig(alpha=0.5, beta=0.25, lead_time=0.10))
+        first = AimMeasurement(point=(100, 100), crosshair=(90, 100), error=(10.0, 0.0), valid=True)
+        second = AimMeasurement(point=(110, 100), crosshair=(90, 100), error=(20.0, 0.0), valid=True)
+
+        predictor.update(first, RuntimeMode(active=True, firing=False), now=1.0)
+        predicted = predictor.update(second, RuntimeMode(active=True, firing=False), now=1.1)
+
+        self.assertEqual(predicted.state, "tracking")
+        self.assertGreater(predicted.point[0], 105)
+        self.assertGreater(predicted.velocity[0], 0.0)
+
+    def test_predictor_holds_recent_track_when_measurement_missing(self):
+        from visual_aiming.algorithms.prediction import AlphaBetaPredictor
+
+        predictor = AlphaBetaPredictor(PredictionConfig(max_hold_ms=200.0))
+        measurement = AimMeasurement(point=(100, 100), crosshair=(90, 100), error=(10.0, 0.0), valid=True)
+        missing = AimMeasurement(point=None, crosshair=(90, 100), error=(0.0, 0.0), valid=False)
+
+        predictor.update(measurement, RuntimeMode(active=True, firing=False), now=1.0)
+        predicted = predictor.update(missing, RuntimeMode(active=True, firing=False), now=1.1)
+
+        self.assertEqual(predicted.state, "held")
+        self.assertIsNotNone(predicted.point)
+
+
+class ControllerTest(unittest.TestCase):
+    def test_controller_returns_noop_inside_deadzone(self):
+        from visual_aiming.algorithms.control import RelativeController
+
+        controller = RelativeController(ControlConfig(deadzone=3.0))
+        predicted = AimMeasurement(point=(101, 100), crosshair=(100, 100), error=(1.0, 0.0), valid=True)
+
+        command = controller.update(predicted.error, active=True, dt=1 / 240)
+
+        self.assertEqual(command.mode, "none")
+        self.assertEqual((command.dx, command.dy), (0, 0))
+        self.assertEqual(command.reason, "deadzone")
+
+    def test_controller_limits_large_step(self):
+        from visual_aiming.algorithms.control import RelativeController
+
+        controller = RelativeController(ControlConfig(deadzone=0.0, speed_gain=1000.0, max_speed=100000.0, max_step=5))
+
+        command = controller.update((100.0, 0.0), active=True, dt=1.0)
+
+        self.assertEqual(command.mode, "relative")
+        self.assertEqual(command.dx, 5)
+        self.assertTrue(command.limited)
+
+
 if __name__ == "__main__":
     unittest.main()

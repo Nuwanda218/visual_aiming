@@ -117,7 +117,7 @@ class ModularConfigTest(unittest.TestCase):
         self.assertEqual(config.detector.confidence, 0.42)
         self.assertEqual(config.target_selection.head_class_id, 2)
         self.assertEqual(config.target_selection.person_class_id, 3)
-        self.assertEqual(config.aim.target_preference, 0.75)
+        self.assertEqual(config.target_selection.target_preference, 0.75)
         self.assertEqual(config.aim.head_bias, 0.2)
         self.assertEqual(config.prediction.lead_time, 0.05)
         self.assertEqual(config.control.deadzone, 3.0)

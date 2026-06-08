@@ -33,8 +33,22 @@ class JsonlDiagnostics:
         self._handle.flush()
         self._accumulate(result)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def __del__(self):
+        try:
+            if hasattr(self, "_handle") and self._handle and not self._handle.closed:
+                self._handle.close()
+        except Exception:
+            pass
+
     def close(self) -> None:
-        if not self._handle.closed:
+        if self._handle and not self._handle.closed:
             self._handle.close()
         self.summary_path.write_text(json.dumps(self.summary(), ensure_ascii=False, indent=2), encoding="utf-8")
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Tuple
 
-
+# Point 类型的唯一定义在 core/schemas.py，这里保持本地别名以避免循环导入
 Point = Tuple[int, int]
 
 
@@ -49,7 +49,6 @@ class TargetSelectionConfig:
 class AimConfig:
     head_bias: float = 0.25
     body_bias: float = 0.45
-    target_preference: float = 0.85
 
 
 @dataclass

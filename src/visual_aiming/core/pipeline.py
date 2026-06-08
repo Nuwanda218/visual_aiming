@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, Protocol
 
 from visual_aiming.algorithms.aim_point import AimStrategy
 from visual_aiming.algorithms.control import RelativeController
@@ -14,6 +14,7 @@ from visual_aiming.core.schemas import (
     ControlCommand,
     ControlTarget,
     DetectionPacket,
+    FramePacket,
     PipelineResult,
     PipelineTickResult,
     Point,
@@ -23,8 +24,28 @@ from visual_aiming.core.schemas import (
 )
 
 
+class _Detector(Protocol):
+    name: str
+    def detect(self, frame: FramePacket) -> DetectionPacket: ...
+
+
+class _OutputBackend(Protocol):
+    name: str
+    def apply(self, command: ControlCommand, result: PipelineTickResult) -> None: ...
+
+
+class _DiagnosticsSink(Protocol):
+    def write(self, result: PipelineTickResult) -> None: ...
+
+
 class ModularPipeline:
-    def __init__(self, config: ModularConfig, detector, output_backend, diagnostics=None) -> None:
+    def __init__(
+        self,
+        config: ModularConfig,
+        detector: _Detector,
+        output_backend: _OutputBackend,
+        diagnostics: Optional[_DiagnosticsSink] = None,
+    ) -> None:
         self.config = config
         self.detector = detector
         self.output_backend = output_backend

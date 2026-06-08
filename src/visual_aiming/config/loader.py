@@ -37,7 +37,6 @@ def modular_config_from_mapping(data: Mapping[str, Any]) -> ModularConfig:
     config.target_selection.class_switch_penalty = float(data.get("target_class_switch_penalty", config.target_selection.class_switch_penalty))
 
     config.aim.head_bias = float(data.get("head_bias", config.aim.head_bias))
-    config.aim.target_preference = float(data.get("aim_target_preference", config.aim.target_preference))
 
     config.prediction.alpha = float(data.get("tracker_smoothing_factor", config.prediction.alpha))
     config.prediction.lead_time = float(data.get("tracker_prediction_time", config.prediction.lead_time))

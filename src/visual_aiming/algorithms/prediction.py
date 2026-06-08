@@ -36,7 +36,15 @@ class AlphaBetaPredictor:
             self.last_time = now
             return PredictedAim(point=point, velocity=self.velocity, confidence=1.0, state="tracking")
 
-        dt = max(1e-4, min(now - self.last_time, 0.12))
+        raw_dt = now - self.last_time
+        # 时钟回退或异常跳跃时，重置追踪器
+        if raw_dt < 0.0:
+            self.position = (x, y)
+            self.velocity = (0.0, 0.0)
+            self.last_time = now
+            return PredictedAim(point=point, velocity=self.velocity, confidence=1.0, state="reset")
+
+        dt = max(1e-4, min(raw_dt, 0.12))
         predicted_x = self.position[0] + self.velocity[0] * dt
         predicted_y = self.position[1] + self.velocity[1] * dt
         residual_x = x - predicted_x

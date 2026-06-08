@@ -11,7 +11,9 @@ from visual_aiming.core.schemas import Detection, DetectionPacket, FramePacket
 class UltralyticsYoloDetector:
     name = "ultralytics"
 
-    def __init__(self, config: DetectorConfig, legacy_detector=None) -> None:
+    def __init__(self, config: DetectorConfig, legacy_detector) -> None:
+        if legacy_detector is None:
+            raise ValueError("UltralyticsYoloDetector requires a legacy_detector instance, got None")
         self.config = config
         self.legacy_detector = legacy_detector
 

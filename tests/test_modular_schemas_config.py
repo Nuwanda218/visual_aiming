@@ -81,5 +81,50 @@ class ModularSchemasTest(unittest.TestCase):
         self.assertIsNotNone(OutputBackend)
 
 
+class ModularConfigTest(unittest.TestCase):
+    def test_default_config_uses_safe_output(self):
+        from visual_aiming.config.schema import ModularConfig
+
+        config = ModularConfig()
+
+        self.assertEqual(config.output.backend, "null")
+        self.assertFalse(config.output.enable_real_mouse)
+        self.assertEqual(config.detector.backend, "ultralytics")
+        self.assertEqual(config.frame.roi_size, (410, 315))
+
+    def test_legacy_flat_config_maps_to_grouped_config(self):
+        from visual_aiming.config.loader import modular_config_from_mapping
+
+        config = modular_config_from_mapping({
+            "roi_width": 500,
+            "roi_height": 300,
+            "detect_fps": 20,
+            "yolo_model_path": "models/custom.pt",
+            "yolo_conf_threshold": 0.42,
+            "yolo_head_class_id": 2,
+            "yolo_person_class_id": 3,
+            "aim_target_preference": 0.75,
+            "head_bias": 0.2,
+            "tracker_prediction_time": 0.05,
+            "servo_deadzone": 3.0,
+            "servo_step_limit": 12,
+            "mouse_absolute_mode_enabled": True,
+        })
+
+        self.assertEqual(config.frame.roi_size, (500, 300))
+        self.assertEqual(config.runtime.detect_fps, 20.0)
+        self.assertEqual(config.detector.model_path, "models/custom.pt")
+        self.assertEqual(config.detector.confidence, 0.42)
+        self.assertEqual(config.target_selection.head_class_id, 2)
+        self.assertEqual(config.target_selection.person_class_id, 3)
+        self.assertEqual(config.aim.target_preference, 0.75)
+        self.assertEqual(config.aim.head_bias, 0.2)
+        self.assertEqual(config.prediction.lead_time, 0.05)
+        self.assertEqual(config.control.deadzone, 3.0)
+        self.assertEqual(config.control.max_step, 12)
+        self.assertEqual(config.output.command_mode, "absolute")
+        self.assertEqual(config.output.backend, "null")
+
+
 if __name__ == "__main__":
     unittest.main()

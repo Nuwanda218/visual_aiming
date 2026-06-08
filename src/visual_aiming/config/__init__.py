@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+"""Legacy Config class (preserved for backward compatibility) and modular config re-exports."""
 import json
 from dataclasses import dataclass, asdict
 from typing import Optional, Tuple, List

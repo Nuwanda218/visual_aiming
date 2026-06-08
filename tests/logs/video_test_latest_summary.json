@@ -1,0 +1,10 @@
+{
+  "samples": 52,
+  "fresh_ratio": 0.8076923076923077,
+  "measurement_ratio": 0.8076923076923077,
+  "avg_detect_latency_ms": 48.666882692766826,
+  "max_detect_latency_ms": 1392.2100000054343,
+  "avg_target_error_after": 807.9297206475746,
+  "likely_bottleneck": "detection_latency",
+  "jsonl_path": "F:\\PyCharm\\python-code\\脚本\\瞄准吸附\\tests\\logs\\video_test_20260528_083437.jsonl"
+}

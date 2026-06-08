@@ -10,6 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 python main.py              # 启动程序（自动请求管理员权限）
+python main.py --modular --video path/to/video.mp4 --output null             # 安全视频回放，不移动鼠标
+python main.py --modular --video path/to/video.mp4 --output log --diagnostics tests/logs/run.jsonl
+python main.py --modular --output win_mouse --real-mouse                    # 显式允许真实鼠标输出
 python -m pytest tests/     # 运行所有测试
 python tests/test_detector_device.py    # 运行单个测试文件
 pip install -r requirements.txt         # 安装依赖
@@ -17,7 +20,9 @@ pip install -r requirements.txt         # 安装依赖
 
 ## 架构
 
-入口文件 `main.py` 仅做两件事：将 `src/` 加入 `sys.path`，然后调用 `visual_aiming.core.runtime.main()`。
+入口文件 `main.py` 仅做两件事：将 `src/` 加入 `sys.path`，然后调用 `visual_aiming.core.runtime.main()`。传入 `--modular` 时进入新模块化运行时。
+
+新模块化算法运行时将输入源、检测器、目标选择、瞄点、预测、控制器和输出后端分离；默认输出为 NullOutput，不会移动真实鼠标。
 
 **包结构 (`src/visual_aiming/`)：**
 

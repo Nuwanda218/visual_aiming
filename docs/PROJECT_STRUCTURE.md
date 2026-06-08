@@ -52,3 +52,22 @@
 - Core interface module: `core/runtime.py`, `core/detect_scheduler.py`, `core/throttle.py`, `core/aim_calculator.py`, `core/target_tracker.py`
 - Action module: `actions/input_listener.py`, `actions/mouse_control.py`, `actions/debug_visualizer.py`, `actions/config_window.py`
 - Common helpers: `common/timing.py`, `common/resource_path.py`, `common/utils.py`
+
+## Modular Algorithm Runtime
+
+The first-version modular runtime lives beside the legacy realtime runtime. It is organized around replaceable ports:
+
+```text
+FrameSource -> Detector -> TargetSelector -> AimStrategy -> Predictor -> Controller -> OutputBackend
+```
+
+Realtime and replay modes are expected to share `visual_aiming.core.pipeline.ModularPipeline`. The default modular output backend is `NullOutput`, so modular runs do not move the mouse unless `--output win_mouse --real-mouse` is passed.
+
+Key modules:
+
+- `visual_aiming.core.schemas`: normalized frame, detection, aim, prediction, command, and tick-result dataclasses.
+- `visual_aiming.ports`: Protocol boundaries for frame sources, detectors, outputs, and diagnostics.
+- `visual_aiming.algorithms`: pure target selection, aim point, prediction, and control logic.
+- `visual_aiming.adapters`: wrappers for screen/video input, ultralytics YOLO, and output backends.
+- `visual_aiming.app.replay`: safe replay runner.
+- `visual_aiming.app.realtime`: composition helpers for realtime mode.

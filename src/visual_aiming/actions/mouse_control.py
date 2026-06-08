@@ -219,7 +219,12 @@ class MouseController:
         if send_x == 0 and send_y == 0:
             return
 
-        send_relative_move(send_x, send_y)
+        # 将相对移动改为绝对移动
+        current_x, current_y = get_cursor_pos()
+        target_x = current_x + send_x
+        target_y = current_y + send_y
+        set_cursor_pos(target_x, target_y)
+        
         self._apply_output_feedback(send_x, send_y, dt)
 
         if self.printer is not None:

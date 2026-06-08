@@ -13,6 +13,7 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Visual aiming runtime")
     parser.add_argument("--modular", action="store_true", help="Run the new modular runtime")
     parser.add_argument("--video", default="", help="Run modular replay on a video file")
+    parser.add_argument("--video-test", action="store_true", help="Interactive video test with GUI file picker")
     parser.add_argument("--output", choices=["null", "log", "win_mouse"], default="null", help="Modular output backend")
     parser.add_argument("--real-mouse", action="store_true", help="Allow real mouse movement when --output win_mouse is selected")
     parser.add_argument("--diagnostics", default="", help="Write modular diagnostics JSONL to this path")
@@ -21,6 +22,9 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
+    if args.video_test:
+        from visual_aiming.app.video_test import run_video_test
+        return run_video_test()
     if args.modular:
         return _run_modular(args)
     from visual_aiming.core.runtime import main as legacy_main

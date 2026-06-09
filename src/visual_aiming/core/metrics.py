@@ -86,6 +86,7 @@ class JsonlDiagnostics:
             "detector_latency_ms": result.detections.latency_ms,
             "pipeline_latency_ms": result.pipeline_latency_ms,
             "latency_breakdown": asdict(result.latency_breakdown),
+            "telemetry": asdict(result.telemetry) if result.telemetry is not None else None,
         }
 
     def _accumulate(self, result: PipelineTickResult) -> None:

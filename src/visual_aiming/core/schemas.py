@@ -17,6 +17,15 @@ class RuntimeMode:
 
 
 @dataclass
+class RuntimeTelemetry:
+    wait_ms: float = 0.0
+    frame_work_ms: float = 0.0
+    display_fps: float = 0.0
+    source_fps: float = 0.0
+    active: bool = False
+
+
+@dataclass
 class FramePacket:
     frame: np.ndarray
     timestamp: float
@@ -26,6 +35,7 @@ class FramePacket:
     crosshair: Point
     source: str
     mode: RuntimeMode = field(default_factory=RuntimeMode)
+    telemetry: Optional[RuntimeTelemetry] = None
 
 
 @dataclass(slots=True)
@@ -126,6 +136,7 @@ class PipelineTickResult:
     output_backend: str
     pipeline_latency_ms: float
     latency_breakdown: LatencyBreakdown = field(default_factory=LatencyBreakdown)
+    telemetry: Optional[RuntimeTelemetry] = None
 
 
 # --- Legacy schemas (used by existing runtime) ---

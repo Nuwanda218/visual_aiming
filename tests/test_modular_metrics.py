@@ -39,11 +39,14 @@ class DiagnosticsMetricsTest(unittest.TestCase):
 
     def test_jsonl_diagnostics_writes_strict_json_without_non_finite_numbers(self):
         from visual_aiming.core.metrics import JsonlDiagnostics
+        from visual_aiming.core.schemas import RuntimeTelemetry
 
         with tempfile.TemporaryDirectory() as tmp:
             jsonl = Path(tmp) / "run.jsonl"
             diagnostics = JsonlDiagnostics(jsonl)
-            diagnostics.write(make_result())
+            result = make_result()
+            result.telemetry = RuntimeTelemetry(wait_ms=11.0, frame_work_ms=23.0, display_fps=41.5, source_fps=60.0, active=True)
+            diagnostics.write(result)
             diagnostics.close()
 
             payload = jsonl.read_text(encoding="utf-8")
@@ -57,6 +60,9 @@ class DiagnosticsMetricsTest(unittest.TestCase):
             self.assertIsNone(record["selected"]["score"])
             self.assertIn("latency_breakdown", record)
             self.assertEqual(record["latency_breakdown"]["total_ms"], 0.0)
+            self.assertEqual(record["telemetry"]["wait_ms"], 11.0)
+            self.assertEqual(record["telemetry"]["frame_work_ms"], 23.0)
+            self.assertEqual(record["telemetry"]["display_fps"], 41.5)
 
 
 if __name__ == "__main__":

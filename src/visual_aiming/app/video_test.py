@@ -30,6 +30,7 @@ from visual_aiming.core.schemas import (
     FramePacket,
     PipelineTickResult,
     RuntimeMode,
+    RuntimeTelemetry,
 )
 from visual_aiming.adapters.detectors.ultralytics_yolo import UltralyticsYoloDetector
 from visual_aiming.vision.detection import TargetDetector
@@ -106,6 +107,7 @@ class VideoTestRunner:
         self.current_frame: Optional[np.ndarray] = None
         self.last_result: Optional[PipelineTickResult] = None
         self.last_frame_work_ms = 0.0
+        self.last_wait_ms = 0
         self.display_fps = 0.0
         self._last_show_at: Optional[float] = None
 
@@ -127,8 +129,8 @@ class VideoTestRunner:
 
         try:
             while True:
-                wait_ms = compute_active_wait_ms(self.fps, self.last_frame_work_ms) if self.active else 50
-                key = cv2.waitKey(wait_ms) & 0xFF
+                self.last_wait_ms = compute_active_wait_ms(self.fps, self.last_frame_work_ms) if self.active else 50
+                key = cv2.waitKey(self.last_wait_ms) & 0xFF
                 frame_started = time.perf_counter()
 
                 if key in (ord("q"), ord("Q"), 27):  # Q / ESC
@@ -198,6 +200,13 @@ class VideoTestRunner:
             crosshair=self.crosshair,
             source="video_test",
             mode=RuntimeMode(active=active, firing=active),
+            telemetry=RuntimeTelemetry(
+                wait_ms=float(self.last_wait_ms),
+                frame_work_ms=self.last_frame_work_ms,
+                display_fps=self.display_fps,
+                source_fps=self.fps,
+                active=active,
+            ),
         )
 
     def _show_frame(self) -> None:
@@ -261,7 +270,8 @@ class VideoTestRunner:
                 f"Detections: {len(result.detections.detections)}",
                 f"Det latency: {result.detections.latency_ms:.1f}ms",
                 f"Pipeline: {result.pipeline_latency_ms:.1f}ms",
-                f"Frame work: {self.last_frame_work_ms:.1f}ms | FPS: {self.display_fps:.1f}",
+                f"Frame work: {self.last_frame_work_ms:.1f}ms | Wait: {self.last_wait_ms}ms",
+                f"FPS: {self.display_fps:.1f}",
                 f"Command: dx={cmd.dx} dy={cmd.dy} ({cmd.reason})",
             ]
         else:

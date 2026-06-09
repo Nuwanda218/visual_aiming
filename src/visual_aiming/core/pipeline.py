@@ -161,6 +161,7 @@ class ModularPipeline:
             output_backend=self._output_name,
             pipeline_latency_ms=latency_ms,
             latency_breakdown=latency_breakdown,
+            telemetry=frame.telemetry,
         )
 
     def _publish(self, result: PipelineTickResult) -> None:

@@ -4,7 +4,7 @@ import json
 import math
 from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from visual_aiming.core.schemas import PipelineTickResult
 
@@ -30,8 +30,8 @@ class JsonlDiagnostics:
         self.max_pipeline_latency_ms = 0.0
 
     def write(self, result: PipelineTickResult) -> None:
-        record = self._record(result)
-        self._handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        record = _strict_jsonable(self._record(result))
+        self._handle.write(json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n")
         self._writes_since_flush += 1
         if self._writes_since_flush >= self._flush_interval:
             self._handle.flush()
@@ -55,7 +55,9 @@ class JsonlDiagnostics:
     def close(self) -> None:
         if self._handle and not self._handle.closed:
             self._handle.close()
-        self.summary_path.write_text(json.dumps(self.summary(), ensure_ascii=False, indent=2), encoding="utf-8")
+        summary = _strict_jsonable(self.summary())
+        payload = json.dumps(summary, ensure_ascii=False, indent=2, allow_nan=False)
+        self.summary_path.write_text(payload, encoding="utf-8")
 
     def summary(self) -> dict:
         avg_command = self.total_command_magnitude / self.samples if self.samples else 0.0
@@ -83,6 +85,7 @@ class JsonlDiagnostics:
             "output_backend": result.output_backend,
             "detector_latency_ms": result.detections.latency_ms,
             "pipeline_latency_ms": result.pipeline_latency_ms,
+            "latency_breakdown": asdict(result.latency_breakdown),
         }
 
     def _accumulate(self, result: PipelineTickResult) -> None:
@@ -98,3 +101,13 @@ class JsonlDiagnostics:
             self.target_switches += 1
         self.max_detector_latency_ms = max(self.max_detector_latency_ms, result.detections.latency_ms)
         self.max_pipeline_latency_ms = max(self.max_pipeline_latency_ms, result.pipeline_latency_ms)
+
+
+def _strict_jsonable(value: Any) -> Any:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _strict_jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_strict_jsonable(item) for item in value]
+    return value

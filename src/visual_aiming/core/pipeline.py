@@ -15,6 +15,7 @@ from visual_aiming.core.schemas import (
     ControlTarget,
     DetectionPacket,
     FramePacket,
+    LatencyBreakdown,
     PipelineResult,
     PipelineTickResult,
     Point,
@@ -85,14 +86,46 @@ class ModularPipeline:
             self._publish(result)
             return result
 
+        phase_started = time.perf_counter()
         detections = self.detector.detect(frame)
+        detect_ms = (time.perf_counter() - phase_started) * 1000.0
+
+        phase_started = time.perf_counter()
         roi_center = (frame.roi_size[0] // 2, frame.roi_size[1] // 2)
         selected = self.selector.select(detections.detections, roi_center=roi_center)
+        select_ms = (time.perf_counter() - phase_started) * 1000.0
+
+        phase_started = time.perf_counter()
         aim = self.aim_strategy.measure(selected.detection, frame.roi_offset, frame.crosshair)
+        aim_ms = (time.perf_counter() - phase_started) * 1000.0
+
+        phase_started = time.perf_counter()
         predicted = self.predictor.update(aim, mode, now)
+        predict_ms = (time.perf_counter() - phase_started) * 1000.0
+
+        phase_started = time.perf_counter()
         error = self._error_from_prediction(predicted, frame.crosshair)
         command = self.controller.update(error, active=mode.active, dt=self._dt)
-        result = self._build_result(frame, mode, detections, selected, aim, predicted, command, started)
+        control_ms = (time.perf_counter() - phase_started) * 1000.0
+
+        latency_breakdown = LatencyBreakdown(
+            detect_ms=detect_ms,
+            select_ms=select_ms,
+            aim_ms=aim_ms,
+            predict_ms=predict_ms,
+            control_ms=control_ms,
+        )
+        result = self._build_result(
+            frame,
+            mode,
+            detections,
+            selected,
+            aim,
+            predicted,
+            command,
+            started,
+            latency_breakdown,
+        )
         self._publish(result)
         return result
 
@@ -101,8 +134,21 @@ class ModularPipeline:
             return (0.0, 0.0)
         return (float(predicted.point[0] - crosshair[0]), float(predicted.point[1] - crosshair[1]))
 
-    def _build_result(self, frame, mode, detections, selected, aim, predicted, command, started) -> PipelineTickResult:
+    def _build_result(
+        self,
+        frame,
+        mode,
+        detections,
+        selected,
+        aim,
+        predicted,
+        command,
+        started,
+        latency_breakdown: Optional[LatencyBreakdown] = None,
+    ) -> PipelineTickResult:
         latency_ms = (time.perf_counter() - started) * 1000.0
+        latency_breakdown = latency_breakdown or LatencyBreakdown()
+        latency_breakdown.total_ms = latency_ms
         return PipelineTickResult(
             sequence=frame.sequence,
             timestamp=frame.timestamp,
@@ -114,6 +160,7 @@ class ModularPipeline:
             command=command,
             output_backend=self._output_name,
             pipeline_latency_ms=latency_ms,
+            latency_breakdown=latency_breakdown,
         )
 
     def _publish(self, result: PipelineTickResult) -> None:

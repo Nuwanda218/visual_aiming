@@ -61,6 +61,13 @@ class ModularAppsTest(unittest.TestCase):
         self.assertEqual(results[0].sequence, 0)
         self.assertEqual(results[1].sequence, 1)
 
+    def test_video_test_wait_subtracts_previous_frame_work(self):
+        from visual_aiming.app.timing import compute_active_wait_ms
+
+        self.assertEqual(compute_active_wait_ms(fps=60.0, previous_frame_ms=0.0), 16)
+        self.assertEqual(compute_active_wait_ms(fps=60.0, previous_frame_ms=10.0), 6)
+        self.assertEqual(compute_active_wait_ms(fps=60.0, previous_frame_ms=40.0), 1)
+
 
 class ModularCliTest(unittest.TestCase):
     def test_main_parser_accepts_modular_safe_flags(self):

@@ -37,6 +37,27 @@ class DiagnosticsMetricsTest(unittest.TestCase):
             self.assertEqual(summary["max_command_magnitude"], 5.0)
             self.assertEqual(summary["noop_commands"], 1)
 
+    def test_jsonl_diagnostics_writes_strict_json_without_non_finite_numbers(self):
+        from visual_aiming.core.metrics import JsonlDiagnostics
+
+        with tempfile.TemporaryDirectory() as tmp:
+            jsonl = Path(tmp) / "run.jsonl"
+            diagnostics = JsonlDiagnostics(jsonl)
+            diagnostics.write(make_result())
+            diagnostics.close()
+
+            payload = jsonl.read_text(encoding="utf-8")
+            self.assertNotIn("Infinity", payload)
+            self.assertNotIn("NaN", payload)
+
+            def reject_constant(value):
+                raise ValueError(f"non-standard JSON constant: {value}")
+
+            record = json.loads(payload, parse_constant=reject_constant)
+            self.assertIsNone(record["selected"]["score"])
+            self.assertIn("latency_breakdown", record)
+            self.assertEqual(record["latency_breakdown"]["total_ms"], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

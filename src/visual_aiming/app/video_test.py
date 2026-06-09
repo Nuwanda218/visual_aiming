@@ -20,6 +20,7 @@ import cv2
 import numpy as np
 
 from visual_aiming.adapters.outputs.win_mouse import WinMouseOutput
+from visual_aiming.app.timing import compute_active_wait_ms
 from visual_aiming.config.loader import load_modular_config
 from visual_aiming.config.schema import ModularConfig
 from visual_aiming.core.metrics import JsonlDiagnostics
@@ -31,6 +32,7 @@ from visual_aiming.core.schemas import (
     RuntimeMode,
 )
 from visual_aiming.adapters.detectors.ultralytics_yolo import UltralyticsYoloDetector
+from visual_aiming.vision.detection import TargetDetector
 
 
 def _select_video_file() -> Optional[str]:
@@ -77,7 +79,8 @@ class VideoTestRunner:
         self.crosshair = (self.frame_w // 2, self.frame_h // 2)
 
         # 管道组件
-        self.detector = UltralyticsYoloDetector(self.config.detector)
+        legacy_detector = TargetDetector()
+        self.detector = UltralyticsYoloDetector(self.config.detector, legacy_detector)
         self.output_backend = WinMouseOutput(enable_real_mouse=True)
 
         # 诊断日志
@@ -102,6 +105,9 @@ class VideoTestRunner:
         self.sequence = 0
         self.current_frame: Optional[np.ndarray] = None
         self.last_result: Optional[PipelineTickResult] = None
+        self.last_frame_work_ms = 0.0
+        self.display_fps = 0.0
+        self._last_show_at: Optional[float] = None
 
     def run(self) -> None:
         """主循环。"""
@@ -121,8 +127,9 @@ class VideoTestRunner:
 
         try:
             while True:
-                wait_ms = max(1, int(1000.0 / self.fps)) if self.active else 50
+                wait_ms = compute_active_wait_ms(self.fps, self.last_frame_work_ms) if self.active else 50
                 key = cv2.waitKey(wait_ms) & 0xFF
+                frame_started = time.perf_counter()
 
                 if key in (ord("q"), ord("Q"), 27):  # Q / ESC
                     break
@@ -144,6 +151,8 @@ class VideoTestRunner:
                     self._tick()
 
                 self._show_frame()
+                if self.active:
+                    self.last_frame_work_ms = (time.perf_counter() - frame_started) * 1000.0
 
                 # 检查窗口是否被关闭
                 if cv2.getWindowProperty(self.WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1:
@@ -252,6 +261,7 @@ class VideoTestRunner:
                 f"Detections: {len(result.detections.detections)}",
                 f"Det latency: {result.detections.latency_ms:.1f}ms",
                 f"Pipeline: {result.pipeline_latency_ms:.1f}ms",
+                f"Frame work: {self.last_frame_work_ms:.1f}ms | FPS: {self.display_fps:.1f}",
                 f"Command: dx={cmd.dx} dy={cmd.dy} ({cmd.reason})",
             ]
         else:
@@ -268,6 +278,17 @@ class VideoTestRunner:
             cv2.putText(display, line, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
 
         cv2.imshow(self.WINDOW_NAME, display)
+        shown_at = time.perf_counter()
+        if self._last_show_at is not None:
+            elapsed = shown_at - self._last_show_at
+            if elapsed > 0:
+                instant_fps = 1.0 / elapsed
+                self.display_fps = (
+                    instant_fps
+                    if self.display_fps <= 0.0
+                    else self.display_fps * 0.85 + instant_fps * 0.15
+                )
+        self._last_show_at = shown_at
 
     def _shutdown(self) -> None:
         """清理资源，打印摘要。"""

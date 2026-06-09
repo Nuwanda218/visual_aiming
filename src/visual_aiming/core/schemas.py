@@ -104,6 +104,16 @@ class ControlCommand:
 
 
 @dataclass
+class LatencyBreakdown:
+    detect_ms: float = 0.0
+    select_ms: float = 0.0
+    aim_ms: float = 0.0
+    predict_ms: float = 0.0
+    control_ms: float = 0.0
+    total_ms: float = 0.0
+
+
+@dataclass
 class PipelineTickResult:
     sequence: int
     timestamp: float
@@ -115,6 +125,7 @@ class PipelineTickResult:
     command: ControlCommand
     output_backend: str
     pipeline_latency_ms: float
+    latency_breakdown: LatencyBreakdown = field(default_factory=LatencyBreakdown)
 
 
 # --- Legacy schemas (used by existing runtime) ---

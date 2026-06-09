@@ -38,6 +38,11 @@ class UltralyticsYoloDetector:
         fresh = bool(getattr(self.legacy_detector, "last_result_fresh", True))
         return DetectionPacket(frame.sequence, detections, latency_ms, self.name, fresh=fresh)
 
+    def warmup(self, frame_shape: tuple[int, int, int]) -> None:
+        preload = getattr(self.legacy_detector, "preload", None)
+        if preload is not None:
+            preload(self._legacy_config(), frame_shape)
+
     def _legacy_config(self):
         return SimpleNamespace(
             yolo_model_path=self.config.model_path,

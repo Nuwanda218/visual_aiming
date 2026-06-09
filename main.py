@@ -17,11 +17,16 @@ def parse_args(argv=None):
     parser.add_argument("--output", choices=["null", "log", "win_mouse"], default="null", help="Modular output backend")
     parser.add_argument("--real-mouse", action="store_true", help="Allow real mouse movement when --output win_mouse is selected")
     parser.add_argument("--diagnostics", default="", help="Write modular diagnostics JSONL to this path")
+    parser.add_argument("--analyze-log", default="", help="Analyze a modular diagnostics JSONL file")
     return parser.parse_args(argv)
 
 
 def main(argv=None):
     args = parse_args(argv)
+    if args.analyze_log:
+        from visual_aiming.app.log_analyzer import analyze_jsonl, format_report
+        print(format_report(analyze_jsonl(args.analyze_log)))
+        return 0
     if args.video_test:
         from visual_aiming.app.video_test import run_video_test
         return run_video_test()

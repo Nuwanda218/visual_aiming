@@ -28,6 +28,9 @@ class FakeLegacyDetector:
         self.called_with = (frame, config, roi_center, firing)
         return LegacyDetectedTarget()
 
+    def preload(self, config, frame_shape):
+        self.preloaded_with = (config, frame_shape)
+
 
 class AdapterTest(unittest.TestCase):
     def test_ultralytics_adapter_normalizes_legacy_detector_result(self):
@@ -53,6 +56,18 @@ class AdapterTest(unittest.TestCase):
         self.assertTrue(packet.fresh)
         self.assertEqual(legacy.called_with[2], (10, 5))
         self.assertTrue(legacy.called_with[3])
+
+    def test_ultralytics_adapter_delegates_warmup_to_legacy_detector(self):
+        from visual_aiming.adapters.detectors.ultralytics_yolo import UltralyticsYoloDetector
+
+        legacy = FakeLegacyDetector()
+        adapter = UltralyticsYoloDetector(DetectorConfig(), legacy_detector=legacy)
+
+        adapter.warmup((315, 410, 3))
+
+        config, frame_shape = legacy.preloaded_with
+        self.assertEqual(frame_shape, (315, 410, 3))
+        self.assertEqual(config.yolo_imgsz, DetectorConfig().imgsz)
 
     def test_array_frame_source_emits_frame_packets_for_replay_tests(self):
         from visual_aiming.adapters.frame_sources.video_file import ArrayFrameSource

@@ -21,6 +21,7 @@ import numpy as np
 
 from visual_aiming.adapters.outputs.win_mouse import WinMouseOutput
 from visual_aiming.app.timing import compute_active_wait_ms
+from visual_aiming.app.video_overlay import build_osd_lines
 from visual_aiming.config.loader import load_modular_config
 from visual_aiming.config.schema import ModularConfig
 from visual_aiming.core.metrics import JsonlDiagnostics
@@ -125,6 +126,7 @@ class VideoTestRunner:
 
         # 读取第一帧
         self._read_next_frame()
+        self._warmup_detector()
         self._show_frame()
 
         try:
@@ -185,6 +187,17 @@ class VideoTestRunner:
         """暂停状态的单帧前进：检测但不移动鼠标。"""
         frame_packet = self._make_frame_packet(active=False)
         self.last_result = self.pipeline.tick(frame_packet, now=time.perf_counter())
+
+    def _warmup_detector(self) -> None:
+        if self.current_frame is None:
+            return
+        warmup = getattr(self.detector, "warmup", None)
+        if warmup is None:
+            return
+        started = time.perf_counter()
+        warmup((self.roi_h, self.roi_w, self.current_frame.shape[2]))
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        print(f"[视频测试] 模型预热完成: {elapsed_ms:.1f}ms")
 
     def _make_frame_packet(self, active: bool) -> FramePacket:
         roi_frame = self.current_frame[
@@ -263,23 +276,18 @@ class VideoTestRunner:
                 end_y = int(cy + cmd.dy * arrow_scale)
                 cv2.arrowedLine(display, (cx, cy), (end_x, end_y), (255, 0, 255), 2, tipLength=0.3)
 
-            # OSD 信息
-            osd_lines = [
-                f"Frame: {self.sequence}/{self.total_frames}",
-                f"Status: {'ACTIVE' if self.active else 'PAUSED'}",
-                f"Detections: {len(result.detections.detections)}",
-                f"Det latency: {result.detections.latency_ms:.1f}ms",
-                f"Pipeline: {result.pipeline_latency_ms:.1f}ms",
-                f"Frame work: {self.last_frame_work_ms:.1f}ms | Wait: {self.last_wait_ms}ms",
-                f"FPS: {self.display_fps:.1f}",
-                f"Command: dx={cmd.dx} dy={cmd.dy} ({cmd.reason})",
-            ]
         else:
-            osd_lines = [
-                f"Frame: {self.sequence}/{self.total_frames}",
-                f"Status: {'ACTIVE' if self.active else 'PAUSED'}",
-                "Press Space to start",
-            ]
+            result = None
+
+        osd_lines = build_osd_lines(
+            sequence=self.sequence,
+            total_frames=self.total_frames,
+            active=self.active,
+            result=result,
+            frame_work_ms=self.last_frame_work_ms,
+            wait_ms=self.last_wait_ms,
+            display_fps=self.display_fps,
+        )
 
         # 绘制 OSD
         for i, line in enumerate(osd_lines):

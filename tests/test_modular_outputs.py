@@ -78,6 +78,32 @@ class OutputBackendTest(unittest.TestCase):
 
         self.assertEqual(calls, [(7, 8)])
 
+    def test_send_relative_move_offsets_current_cursor_position(self):
+        from visual_aiming.adapters.outputs.win_mouse import send_relative_move
+
+        class FakePoint:
+            x = 100
+            y = 200
+
+        class FakeUser32:
+            def __init__(self):
+                self.positions = []
+
+            def GetCursorPos(self, point_ref):
+                point_ref._obj.x = FakePoint.x
+                point_ref._obj.y = FakePoint.y
+                return 1
+
+            def SetCursorPos(self, x, y):
+                self.positions.append((x, y))
+                return 1
+
+        fake_user32 = FakeUser32()
+
+        send_relative_move(7, -3, user32=fake_user32)
+
+        self.assertEqual(fake_user32.positions, [(107, 197)])
+
 
 if __name__ == "__main__":
     unittest.main()

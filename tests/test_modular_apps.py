@@ -3,6 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -13,6 +14,14 @@ from visual_aiming.config.schema import ModularConfig
 
 
 class ModularAppsTest(unittest.TestCase):
+    def test_create_pipeline_uses_detector_factory_by_default(self):
+        from visual_aiming.app.realtime import create_pipeline
+
+        pipeline = create_pipeline(ModularConfig())
+
+        self.assertEqual(pipeline.detector.name, "ultralytics")
+        self.assertTrue(hasattr(pipeline.detector, "legacy_detector"))
+
     def test_output_factory_defaults_to_null(self):
         from visual_aiming.app.realtime import create_output_backend
 
@@ -92,13 +101,38 @@ class ModularAppsTest(unittest.TestCase):
         self.assertIn("FPS: 44.8", joined)
         self.assertIn("(tracking)", joined)
 
+    def test_video_run_diagnostics_builds_log_path_and_summary_lines(self):
+        from visual_aiming.app.video_run_diagnostics import build_video_log_path, format_summary_lines
+
+        path = build_video_log_path("C:/videos/sample.mp4", timestamp="20260609_120000", log_dir=Path("logs"))
+        self.assertEqual(path, Path("logs") / "video_test_sample_20260609_120000.jsonl")
+
+        lines = format_summary_lines(
+            {
+                "samples": 2,
+                "noop_commands": 1,
+                "target_lost": 1,
+                "target_switches": 0,
+                "avg_command_magnitude": 3.5,
+                "max_command_magnitude": 7.0,
+                "max_detector_latency_ms": 12.0,
+                "max_pipeline_latency_ms": 13.0,
+            },
+            jsonl_path=path,
+        )
+
+        joined = "\n".join(lines)
+        self.assertIn("处理帧数: 2", joined)
+        self.assertIn("平均控制幅度: 3.50", joined)
+        self.assertIn("日志路径: logs", joined)
+
     def test_log_analyzer_summarizes_modular_jsonl(self):
         from visual_aiming.app.log_analyzer import analyze_jsonl
 
         rows = [
             {
                 "detections": [{"class_id": 0}],
-                "selected": {"reason": "selected"},
+                "selected": {"reason": "selected", "switched": False},
                 "predicted": {"state": "tracking"},
                 "command": {"mode": "relative", "reason": "tracking"},
                 "detector_latency_ms": 10.0,
@@ -108,7 +142,7 @@ class ModularAppsTest(unittest.TestCase):
             },
             {
                 "detections": [],
-                "selected": {"reason": "no_detections"},
+                "selected": {"reason": "no_detections", "switched": True},
                 "predicted": {"state": "lost"},
                 "command": {"mode": "none", "reason": "deadzone"},
                 "detector_latency_ms": 30.0,
@@ -129,8 +163,12 @@ class ModularAppsTest(unittest.TestCase):
         self.assertEqual(report["target_lost_rate_pct"], 50.0)
         self.assertEqual(report["detector_latency_ms"]["p50"], 10.0)
         self.assertEqual(report["detector_latency_ms"]["p95"], 30.0)
+        self.assertEqual(report["detector_latency_ms"]["p99"], 30.0)
         self.assertEqual(report["display_fps"]["avg"], 37.5)
         self.assertEqual(report["bottleneck"], "detect")
+        self.assertEqual(report["target_switches"], 1)
+        self.assertEqual(report["predicted_state_counts"], {"tracking": 1, "lost": 1})
+        self.assertIn("wait_not_bottleneck", report["insight_codes"])
 
 
 class ModularCliTest(unittest.TestCase):
@@ -167,6 +205,17 @@ class ModularCliTest(unittest.TestCase):
         args = parse_args(["--analyze-log", "logs/run.jsonl"])
 
         self.assertEqual(args.analyze_log, "logs/run.jsonl")
+
+    def test_main_video_test_delegates_to_modular_runner(self):
+        if str(PROJECT_ROOT) not in sys.path:
+            sys.path.insert(0, str(PROJECT_ROOT))
+        from main import main
+
+        with patch("visual_aiming.app.video_test.run_video_test", return_value=7) as run_video_test:
+            result = main(["--video-test"])
+
+        self.assertEqual(result, 7)
+        run_video_test.assert_called_once_with()
 
 
 if __name__ == "__main__":

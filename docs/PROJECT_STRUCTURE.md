@@ -7,14 +7,38 @@
 ├── requirements.txt
 ├── src/
 │   └── visual_aiming/
-│       ├── app.py
-│       ├── config.py
+│       ├── app/
+│       │   ├── log_analyzer.py
+│       │   ├── replay.py
+│       │   ├── realtime.py
+│       │   ├── timing.py
+│       │   ├── video_overlay.py
+│       │   ├── video_run_diagnostics.py
+│       │   └── video_test.py
+│       ├── adapters/
+│       │   ├── detectors/
+│       │   ├── frame_sources/
+│       │   └── outputs/
+│       ├── algorithms/
+│       │   ├── aim_point.py
+│       │   ├── control.py
+│       │   ├── prediction.py
+│       │   └── target_selection.py
+│       ├── config/
 │       ├── core/
+│       │   ├── metrics.py
+│       │   ├── pipeline.py
 │       │   ├── runtime.py
 │       │   ├── aim_calculator.py
 │       │   ├── target_tracker.py
 │       │   ├── detect_scheduler.py
+│       │   ├── schemas.py
 │       │   └── throttle.py
+│       ├── ports/
+│       │   ├── detector.py
+│       │   ├── diagnostics.py
+│       │   ├── frame_source.py
+│       │   └── output.py
 │       ├── vision/
 │       │   ├── screen_capture.py
 │       │   ├── capture_worker.py
@@ -42,7 +66,10 @@
 ## Entry Points
 
 - `main.py`: stable compatibility launcher. Use this for VSCode and normal local runs.
-- `src/visual_aiming/app.py`: compatibility wrapper that imports `visual_aiming.core.runtime.main`.
+- `src/visual_aiming/app/`: modular app package for replay, realtime composition, video-test, and diagnostics analysis.
+- `src/visual_aiming/adapters/`: concrete integrations for detector, frame sources, and output backends.
+- `src/visual_aiming/algorithms/`: modular target selection, aim, prediction, and control algorithms.
+- `src/visual_aiming/ports/`: Protocol boundaries between pipeline and adapters.
 - `src/visual_aiming/core/runtime.py`: actual application loop.
 - `scripts/build_exe.py`: PyInstaller build helper.
 
@@ -71,3 +98,4 @@ Key modules:
 - `visual_aiming.adapters`: wrappers for screen/video input, ultralytics YOLO, and output backends.
 - `visual_aiming.app.replay`: safe replay runner.
 - `visual_aiming.app.realtime`: composition helpers for realtime mode.
+- `visual_aiming.app.video_test`: interactive video-test runner used by `main.py --video-test`.

@@ -12,16 +12,17 @@
 from __future__ import annotations
 
 import time
-from pathlib import Path
 from tkinter import Tk, filedialog
 from typing import Optional
 
 import cv2
 import numpy as np
 
-from visual_aiming.adapters.outputs.win_mouse import WinMouseOutput
+from visual_aiming.adapters.detectors.factory import create_ultralytics_detector
+from visual_aiming.adapters.outputs.factory import create_real_mouse_output_backend
 from visual_aiming.app.timing import compute_active_wait_ms
 from visual_aiming.app.video_overlay import build_osd_lines
+from visual_aiming.app.video_run_diagnostics import build_video_log_path, format_summary_lines
 from visual_aiming.config.loader import load_modular_config
 from visual_aiming.config.schema import ModularConfig
 from visual_aiming.core.metrics import JsonlDiagnostics
@@ -33,8 +34,6 @@ from visual_aiming.core.schemas import (
     RuntimeMode,
     RuntimeTelemetry,
 )
-from visual_aiming.adapters.detectors.ultralytics_yolo import UltralyticsYoloDetector
-from visual_aiming.vision.detection import TargetDetector
 
 
 def _select_video_file() -> Optional[str]:
@@ -81,18 +80,12 @@ class VideoTestRunner:
         self.crosshair = (self.frame_w // 2, self.frame_h // 2)
 
         # 管道组件
-        legacy_detector = TargetDetector()
-        self.detector = UltralyticsYoloDetector(self.config.detector, legacy_detector)
-        self.output_backend = WinMouseOutput(enable_real_mouse=True)
+        self.detector = create_ultralytics_detector(self.config.detector)
+        self.output_backend = create_real_mouse_output_backend()
 
         # 诊断日志
-        log_dir = Path("logs")
-        log_dir.mkdir(exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        video_name = Path(video_path).stem
-        self.diagnostics = JsonlDiagnostics(
-            log_dir / f"video_test_{video_name}_{timestamp}.jsonl"
-        )
+        self.diagnostics = JsonlDiagnostics(build_video_log_path(video_path, timestamp=timestamp))
 
         # 管道
         self.pipeline = ModularPipeline(
@@ -316,17 +309,8 @@ class VideoTestRunner:
         cv2.destroyAllWindows()
 
         summary = self.diagnostics.summary()
-        print(f"\n{'='*50}")
-        print(f"[视频测试] 完成 — 诊断摘要:")
-        print(f"  处理帧数: {summary['samples']}")
-        print(f"  空指令帧: {summary['noop_commands']}")
-        print(f"  目标丢失: {summary['target_lost']}")
-        print(f"  目标切换: {summary['target_switches']}")
-        print(f"  平均控制幅度: {summary['avg_command_magnitude']:.2f}")
-        print(f"  最大控制幅度: {summary['max_command_magnitude']:.2f}")
-        print(f"  最大检测延迟: {summary['max_detector_latency_ms']:.1f}ms")
-        print(f"  最大管道延迟: {summary['max_pipeline_latency_ms']:.1f}ms")
-        print(f"  日志路径: {self.diagnostics.jsonl_path}")
+        for line in format_summary_lines(summary, jsonl_path=self.diagnostics.jsonl_path):
+            print(line)
         print(f"{'='*50}")
 
 

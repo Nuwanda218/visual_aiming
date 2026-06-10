@@ -1,5 +1,9 @@
 # Python Modular Algorithm Refactor Implementation Plan
 
+> **Historical status (2026-06-09):** This document is an implementation plan record, not the current source of truth for module locations.
+> The current implementation uses the `src/visual_aiming/app/` package and has removed the duplicate `src/visual_aiming/app.py` module.
+> Detector and output construction now goes through `visual_aiming.adapters.detectors.factory` and `visual_aiming.adapters.outputs.factory`; older snippets below that instantiate `UltralyticsYoloDetector(config.detector)` or `WinMouseOutput` directly are preserved as historical plan text.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the first Python-first modular algorithm runtime where realtime screen input and offline replay share one pipeline with replaceable detector, algorithms, diagnostics, and output backends.

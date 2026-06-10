@@ -1,15 +1,27 @@
 from __future__ import annotations
 
 import ctypes
+import ctypes.wintypes
 from typing import Callable, Optional
 
 from visual_aiming.core.schemas import ControlCommand, PipelineTickResult
 
-MOUSEEVENTF_MOVE = 0x0001
+user32 = ctypes.windll.user32
 
 
-def send_relative_move(dx: int, dy: int) -> None:
-    ctypes.windll.user32.mouse_event(MOUSEEVENTF_MOVE, int(dx), int(dy), 0, 0)
+def get_cursor_pos(user32=user32) -> tuple[int, int]:
+    point = ctypes.wintypes.POINT()
+    user32.GetCursorPos(ctypes.byref(point))
+    return (int(point.x), int(point.y))
+
+
+def set_cursor_pos(x: int, y: int, user32=user32) -> None:
+    user32.SetCursorPos(int(x), int(y))
+
+
+def send_relative_move(dx: int, dy: int, user32=user32) -> None:
+    current_x, current_y = get_cursor_pos(user32)
+    set_cursor_pos(current_x + int(dx), current_y + int(dy), user32)
 
 
 class WinMouseOutput:

@@ -9,7 +9,7 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from visual_aiming.config.schema import DetectorConfig, FrameSourceConfig
+from visual_aiming.config.schema import DetectorConfig, FrameSourceConfig, OutputConfig
 from visual_aiming.core.schemas import FramePacket, RuntimeMode
 
 
@@ -68,6 +68,26 @@ class AdapterTest(unittest.TestCase):
         config, frame_shape = legacy.preloaded_with
         self.assertEqual(frame_shape, (315, 410, 3))
         self.assertEqual(config.yolo_imgsz, DetectorConfig().imgsz)
+
+    def test_detector_factory_creates_ultralytics_adapter(self):
+        from visual_aiming.adapters.detectors.factory import create_ultralytics_detector
+
+        detector = create_ultralytics_detector(DetectorConfig())
+
+        self.assertEqual(detector.name, "ultralytics")
+        self.assertTrue(hasattr(detector, "legacy_detector"))
+
+    def test_output_factory_creates_configured_backends(self):
+        from visual_aiming.adapters.outputs.factory import create_output_backend
+
+        null_output = create_output_backend(OutputConfig())
+        mouse_output = create_output_backend(
+            OutputConfig(backend="win_mouse", enable_real_mouse=True),
+            mouse_sender=lambda dx, dy: None,
+        )
+
+        self.assertEqual(null_output.name, "null")
+        self.assertEqual(mouse_output.name, "win_mouse")
 
     def test_array_frame_source_emits_frame_packets_for_replay_tests(self):
         from visual_aiming.adapters.frame_sources.video_file import ArrayFrameSource

@@ -78,6 +78,7 @@ class OutputConfig:
     backend: str = "null"
     enable_real_mouse: bool = False
     command_mode: str = "relative"
+    mouse_method: str = "set_cursor"
     log_path: str = ""
 
 

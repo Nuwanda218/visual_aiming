@@ -90,6 +90,11 @@ FrameSource -> Detector -> TargetSelector -> AimStrategy -> Predictor -> Control
 
 Realtime and replay modes are expected to share `visual_aiming.core.pipeline.ModularPipeline`. The default modular output backend is `NullOutput`, so modular runs do not move the mouse unless `--output win_mouse --real-mouse` is passed.
 
+Windows mouse output has two selectable sender methods for testing:
+
+- `modular_mouse_method: "set_cursor"` keeps the conservative `GetCursorPos + SetCursorPos` path.
+- `modular_mouse_method: "sendinput"` uses Win32 `SendInput` relative mouse movement for games that ignore cursor-position changes.
+
 Key modules:
 
 - `visual_aiming.core.schemas`: normalized frame, detection, aim, prediction, command, and tick-result dataclasses.

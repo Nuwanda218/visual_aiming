@@ -38,9 +38,23 @@ Analyze a specific run:
 
 Key fields:
 
-- `检测命中率`: percentage of frames with at least one detection.
+- `检测输出率`: percentage of frames with at least one detection. This is not detection accuracy because unannotated videos may contain empty frames.
+- `可见目标检出率`: when annotations exist, percentage of target-visible frames with at least one detection.
+- `空场景误检率`: when annotations exist, percentage of target-empty frames that still produced detections.
 - `目标丢失率`: percentage of frames where prediction state is `lost`.
 - `目标切换`: number of selected target switches.
+- `非零指令率`: percentage of frames where output command has non-zero movement.
+- `指令幅度`: movement command magnitude distribution across all frames.
+- `非零指令幅度`: movement command magnitude distribution after zero commands are removed.
+- `最长追踪段`: longest consecutive run of `tracking` prediction state.
+- `最长丢失段`: longest consecutive run of `lost` prediction state.
+- `最长无检测段`: longest consecutive run of frames without detections.
+- `异常段`: longest frame ranges for no detection, lost prediction, and zero movement command. Use the `seq` range to inspect the matching video section.
+- `预测状态`: counts for prediction states such as `tracking`, `held`, `lost`, and `reset`.
+- `选择原因`: counts for target-selection reasons such as `selected` and `no_detections`.
+- `命令原因`: counts for command reasons such as `tracking`, `deadzone`, and `subpixel`.
+- `目标中心跳变`: selected target center movement between adjacent selected frames.
+- `最大目标跳变`: largest adjacent selected-target center jump and its source sequence range.
 - `检测延迟`: detector latency percentiles.
 - `显示 FPS`: measured debug window FPS.
 - `帧处理耗时`: per-frame UI loop work time.
@@ -61,9 +75,13 @@ Recent manual tests showed:
 
 Before changing target selection or target-lost handling, collect at least one fresh video-test run and keep these fields in the report:
 
-- detection rate
+- detection output rate
+- annotation-based detection quality, if the log contains `target_visible`, `enemy_visible`, `annotations.target_visible`, or `annotations.enemy_visible`
 - target lost rate
 - target switches
+- command magnitude p50/p95/max
+- problem segment sequence ranges
+- largest target jump sequence range
 - detector p50/p95/p99
 - display FPS p50/avg
 - frame work p50/p95

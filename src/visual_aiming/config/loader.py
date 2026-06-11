@@ -57,6 +57,7 @@ def modular_config_from_mapping(data: Mapping[str, Any]) -> ModularConfig:
         config.output.command_mode = "absolute"
     config.output.backend = str(data.get("modular_output_backend", config.output.backend))
     config.output.enable_real_mouse = bool(data.get("modular_enable_real_mouse", config.output.enable_real_mouse))
+    config.output.mouse_method = str(data.get("modular_mouse_method", config.output.mouse_method))
     config.output.log_path = str(data.get("modular_output_log_path", config.output.log_path))
 
     config.diagnostics.enabled = bool(data.get("modular_diagnostics_enabled", config.diagnostics.enabled))

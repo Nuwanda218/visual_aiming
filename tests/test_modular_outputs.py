@@ -104,6 +104,60 @@ class OutputBackendTest(unittest.TestCase):
 
         self.assertEqual(fake_user32.positions, [(107, 197)])
 
+    def test_sendinput_relative_move_sends_mouse_input_delta(self):
+        from visual_aiming.adapters.outputs.win_mouse import MOUSEEVENTF_MOVE, send_relative_move_sendinput
+
+        class FakeUser32:
+            def __init__(self):
+                self.calls = []
+
+            def SendInput(self, count, inputs, size):
+                record = inputs[0]
+                mouse = record.value.mi
+                self.calls.append((count, record.type, mouse.dx, mouse.dy, mouse.dwFlags, size))
+                return count
+
+        fake_user32 = FakeUser32()
+
+        send_relative_move_sendinput(7, -3, user32=fake_user32)
+
+        self.assertEqual(fake_user32.calls[0][:5], (1, 0, 7, -3, MOUSEEVENTF_MOVE))
+
+    def test_create_mouse_sender_selects_setcursor_or_sendinput(self):
+        from visual_aiming.adapters.outputs.win_mouse import (
+            create_mouse_sender,
+            send_relative_move_setcursor,
+            send_relative_move_sendinput,
+        )
+
+        self.assertIs(create_mouse_sender("set_cursor"), send_relative_move_setcursor)
+        self.assertIs(create_mouse_sender("sendinput"), send_relative_move_sendinput)
+
+        with self.assertRaises(ValueError):
+            create_mouse_sender("unknown")
+
+    def test_output_factory_selects_configured_mouse_sender(self):
+        from visual_aiming.adapters.outputs import factory
+        from visual_aiming.config.schema import OutputConfig
+
+        calls = []
+
+        def fake_create_sender(method):
+            calls.append(method)
+            return lambda _dx, _dy: None
+
+        original = factory.create_mouse_sender
+        factory.create_mouse_sender = fake_create_sender
+        try:
+            output = factory.create_output_backend(
+                OutputConfig(backend="win_mouse", enable_real_mouse=True, mouse_method="sendinput")
+            )
+        finally:
+            factory.create_mouse_sender = original
+
+        self.assertEqual(output.name, "win_mouse")
+        self.assertEqual(calls, ["sendinput"])
+
 
 if __name__ == "__main__":
     unittest.main()

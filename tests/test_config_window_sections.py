@@ -16,9 +16,32 @@ class ConfigWindowSectionsTest(unittest.TestCase):
         sections = ConfigWindow(object(), "config.json")._sections()
         names = [name for name, _items in sections]
 
-        self.assertEqual(names[:4], ["核心性能", "模型/GPU", "控制平滑", "目标行为"])
+        self.assertEqual(names[:2], ["常用调参", "输出测试"])
+        self.assertEqual(names, ["常用调参", "输出测试", "高级-性能模型", "高级-控制行为", "高级-预测开火"])
 
-    def test_core_tuning_keys_are_available(self):
+    def test_common_tuning_panel_stays_small_and_actionable(self):
+        sections = ConfigWindow(object(), "config.json")._sections()
+        common_items = dict(sections)["常用调参"]
+        common_keys = {item.key for item in common_items}
+
+        self.assertLessEqual(len(common_items), 12)
+        self.assertEqual(
+            common_keys,
+            {
+                "capture_fps",
+                "detect_fps",
+                "firing_detect_fps",
+                "yolo_conf_threshold",
+                "yolo_imgsz",
+                "servo_output_gain",
+                "servo_step_limit",
+                "servo_deadzone",
+                "target_stickiness",
+                "head_bias",
+            },
+        )
+
+    def test_advanced_tuning_keys_are_still_available(self):
         sections = ConfigWindow(object(), "config.json")._sections()
         keys = {
             item.key
@@ -37,6 +60,9 @@ class ConfigWindowSectionsTest(unittest.TestCase):
             "yolo_imgsz",
             "servo_output_gain",
             "target_stickiness",
+            "tracker_prediction_time",
+            "fps_acceleration",
+            "firing_anchor_hold_ms",
         ]:
             self.assertIn(key, keys)
 

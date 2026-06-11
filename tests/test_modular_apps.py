@@ -159,6 +159,7 @@ class ModularAppsTest(unittest.TestCase):
             report = analyze_jsonl(path)
 
         self.assertEqual(report["samples"], 2)
+        self.assertEqual(report["detection_output_rate_pct"], 50.0)
         self.assertEqual(report["detection_rate_pct"], 50.0)
         self.assertEqual(report["target_lost_rate_pct"], 50.0)
         self.assertEqual(report["detector_latency_ms"]["p50"], 10.0)
@@ -169,6 +170,257 @@ class ModularAppsTest(unittest.TestCase):
         self.assertEqual(report["target_switches"], 1)
         self.assertEqual(report["predicted_state_counts"], {"tracking": 1, "lost": 1})
         self.assertIn("wait_not_bottleneck", report["insight_codes"])
+
+    def test_log_analyzer_labels_detection_output_rate_not_accuracy(self):
+        from visual_aiming.app.log_analyzer import analyze_jsonl, format_report
+
+        rows = [
+            {"detections": [{"class_id": 0}], "predicted": {"state": "tracking"}, "command": {"mode": "relative"}},
+            {"detections": [], "predicted": {"state": "lost"}, "command": {"mode": "none"}},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            report = format_report(analyze_jsonl(path))
+
+        self.assertIn("检测输出率: 50.0%", report)
+        self.assertNotIn("检测命中率", report)
+
+    def test_log_analyzer_reports_annotation_based_detection_quality(self):
+        from visual_aiming.app.log_analyzer import analyze_jsonl, format_report
+
+        rows = [
+            {"target_visible": True, "detections": [{"class_id": 0}]},
+            {"target_visible": True, "detections": []},
+            {"enemy_visible": False, "detections": [{"class_id": 0}]},
+            {"annotations": {"enemy_visible": False}, "detections": []},
+            {"detections": [{"class_id": 0}]},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            analyzed = analyze_jsonl(path)
+            report = format_report(analyzed)
+
+        self.assertEqual(analyzed["annotation_quality"], {
+            "target_visible_frames": 2,
+            "empty_scene_frames": 2,
+            "visible_target_detection_rate_pct": 50.0,
+            "empty_scene_false_positive_rate_pct": 50.0,
+        })
+        self.assertIn("可见目标检出率: 50.0% (2 frames)", report)
+        self.assertIn("空场景误检率: 50.0% (2 frames)", report)
+
+    def test_log_analyzer_reports_continuity_and_nonzero_command_metrics(self):
+        from visual_aiming.app.log_analyzer import analyze_jsonl, format_report
+
+        rows = [
+            {
+                "detections": [{"class_id": 0}],
+                "selected": {"reason": "selected", "switched": False},
+                "predicted": {"state": "tracking"},
+                "command": {"mode": "relative", "reason": "tracking", "dx": 3, "dy": 0},
+            },
+            {
+                "detections": [{"class_id": 0}],
+                "selected": {"reason": "selected", "switched": False},
+                "predicted": {"state": "tracking"},
+                "command": {"mode": "relative", "reason": "subpixel", "dx": 0, "dy": 0},
+            },
+            {
+                "detections": [],
+                "selected": {"reason": "no_detections", "switched": False},
+                "predicted": {"state": "lost"},
+                "command": {"mode": "none", "reason": "deadzone", "dx": 0, "dy": 0},
+            },
+            {
+                "detections": [],
+                "selected": {"reason": "no_detections", "switched": False},
+                "predicted": {"state": "lost"},
+                "command": {"mode": "none", "reason": "deadzone", "dx": 0, "dy": 0},
+            },
+            {
+                "detections": [{"class_id": 0}],
+                "selected": {"reason": "selected", "switched": True},
+                "predicted": {"state": "held"},
+                "command": {"mode": "relative", "reason": "tracking", "dx": 1, "dy": -1},
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            report = analyze_jsonl(path)
+
+        self.assertEqual(report["nonzero_command_rate_pct"], 40.0)
+        self.assertEqual(
+            report["continuity"],
+            {
+                "max_tracking_streak": 2,
+                "max_lost_streak": 2,
+                "max_detection_streak": 2,
+                "max_no_detection_streak": 2,
+                "max_relative_command_streak": 2,
+                "max_nonzero_command_streak": 1,
+            },
+        )
+        self.assertIn("最长追踪段: 2", format_report(report))
+
+    def test_log_analyzer_reports_problem_segments_with_sequences(self):
+        from visual_aiming.app.log_analyzer import analyze_jsonl, format_report
+
+        rows = [
+            {
+                "sequence": 10,
+                "detections": [],
+                "selected": {"reason": "no_detections"},
+                "predicted": {"state": "lost"},
+                "command": {"mode": "none", "reason": "deadzone", "dx": 0, "dy": 0},
+            },
+            {
+                "sequence": 11,
+                "detections": [],
+                "selected": {"reason": "no_detections"},
+                "predicted": {"state": "lost"},
+                "command": {"mode": "none", "reason": "deadzone", "dx": 0, "dy": 0},
+            },
+            {
+                "sequence": 12,
+                "detections": [{"class_id": 0}],
+                "selected": {"reason": "selected", "detection": {"bbox": [0, 0, 10, 10]}},
+                "predicted": {"state": "tracking"},
+                "command": {"mode": "relative", "reason": "subpixel", "dx": 0, "dy": 0},
+            },
+            {
+                "sequence": 13,
+                "detections": [{"class_id": 0}],
+                "selected": {"reason": "selected", "detection": {"bbox": [30, 40, 10, 10]}},
+                "predicted": {"state": "tracking"},
+                "command": {"mode": "relative", "reason": "tracking", "dx": 2, "dy": 0},
+            },
+            {
+                "sequence": 14,
+                "detections": [],
+                "selected": {"reason": "no_detections"},
+                "predicted": {"state": "lost"},
+                "command": {"mode": "none", "reason": "deadzone", "dx": 0, "dy": 0},
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            analyzed = analyze_jsonl(path)
+            report = format_report(analyzed)
+
+        self.assertEqual(analyzed["problem_segments"], {
+            "longest_no_detection": {"length": 2, "start_sequence": 10, "end_sequence": 11},
+            "longest_lost": {"length": 2, "start_sequence": 10, "end_sequence": 11},
+            "longest_zero_command": {"length": 3, "start_sequence": 10, "end_sequence": 12},
+        })
+        self.assertEqual(analyzed["largest_selected_center_jump"], {
+            "distance_px": 50.0,
+            "from_sequence": 12,
+            "to_sequence": 13,
+        })
+        self.assertIn("异常段: 无检测=2(seq 10-11), 丢失=2(seq 10-11), 零指令=3(seq 10-12)", report)
+        self.assertIn("最大目标跳变: 50.00px (seq 12->13)", report)
+
+    def test_log_analyzer_reports_command_magnitude_distribution(self):
+        from visual_aiming.app.log_analyzer import analyze_jsonl, format_report
+
+        rows = [
+            {"command": {"dx": 0, "dy": 0}},
+            {"command": {"dx": 3, "dy": 4}},
+            {"command": {"dx": 6, "dy": 8}},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            analyzed = analyze_jsonl(path)
+            report = format_report(analyzed)
+
+        self.assertEqual(analyzed["command_magnitude_px"]["p50"], 5.0)
+        self.assertEqual(analyzed["command_magnitude_px"]["max"], 10.0)
+        self.assertEqual(analyzed["nonzero_command_magnitude_px"]["p50"], 5.0)
+        self.assertIn("指令幅度: p50=5.00px p95=10.00px max=10.00px", report)
+        self.assertIn("非零指令幅度: p50=5.00px p95=10.00px max=10.00px", report)
+
+    def test_log_analyzer_report_includes_reason_count_summaries(self):
+        from visual_aiming.app.log_analyzer import analyze_jsonl, format_report
+
+        rows = [
+            {
+                "detections": [{"class_id": 0}],
+                "selected": {"reason": "selected", "switched": False},
+                "predicted": {"state": "tracking"},
+                "command": {"mode": "relative", "reason": "tracking", "dx": 2, "dy": 1},
+            },
+            {
+                "detections": [],
+                "selected": {"reason": "no_detections", "switched": False},
+                "predicted": {"state": "lost"},
+                "command": {"mode": "none", "reason": "deadzone", "dx": 0, "dy": 0},
+            },
+            {
+                "detections": [],
+                "selected": {"reason": "no_detections", "switched": False},
+                "predicted": {"state": "lost"},
+                "command": {"mode": "none", "reason": "deadzone", "dx": 0, "dy": 0},
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            report = format_report(analyze_jsonl(path))
+
+        self.assertIn("预测状态: lost=2, tracking=1", report)
+        self.assertIn("选择原因: no_detections=2, selected=1", report)
+        self.assertIn("命令原因: deadzone=2, tracking=1", report)
+
+    def test_log_analyzer_reports_selected_center_jump_stats(self):
+        from visual_aiming.app.log_analyzer import analyze_jsonl, format_report
+
+        rows = [
+            {
+                "detections": [{"class_id": 0}],
+                "selected": {"reason": "selected", "detection": {"bbox": [0, 0, 10, 10]}},
+                "predicted": {"state": "tracking"},
+                "command": {"mode": "relative", "reason": "tracking", "dx": 1, "dy": 1},
+            },
+            {
+                "detections": [{"class_id": 0}],
+                "selected": {"reason": "selected", "detection": {"bbox": [3, 4, 10, 10]}},
+                "predicted": {"state": "tracking"},
+                "command": {"mode": "relative", "reason": "tracking", "dx": 1, "dy": 1},
+            },
+            {
+                "detections": [{"class_id": 0}],
+                "selected": {"reason": "selected", "detection": {"bbox": [13, 4, 10, 10]}},
+                "predicted": {"state": "tracking"},
+                "command": {"mode": "relative", "reason": "tracking", "dx": 1, "dy": 1},
+            },
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            report = analyze_jsonl(path)
+
+        self.assertEqual(report["selected_center_jump_px"]["p50"], 5.0)
+        self.assertEqual(report["selected_center_jump_px"]["max"], 10.0)
+        self.assertIn("目标中心跳变: p50=5.00px", format_report(report))
 
 
 class ModularCliTest(unittest.TestCase):
@@ -184,6 +436,7 @@ class ModularCliTest(unittest.TestCase):
         self.assertEqual(args.video, "sample.mp4")
         self.assertEqual(args.output, "log")
         self.assertEqual(args.diagnostics, "run.jsonl")
+        self.assertEqual(args.mouse_method, "set_cursor")
         self.assertFalse(args.real_mouse)
 
     def test_main_parser_accepts_explicit_real_mouse_flag(self):
@@ -196,6 +449,15 @@ class ModularCliTest(unittest.TestCase):
         self.assertTrue(args.modular)
         self.assertTrue(args.real_mouse)
         self.assertEqual(args.output, "win_mouse")
+
+    def test_main_parser_accepts_mouse_method_flag(self):
+        if str(PROJECT_ROOT) not in sys.path:
+            sys.path.insert(0, str(PROJECT_ROOT))
+        from main import parse_args
+
+        args = parse_args(["--modular", "--output", "win_mouse", "--real-mouse", "--mouse-method", "sendinput"])
+
+        self.assertEqual(args.mouse_method, "sendinput")
 
     def test_main_parser_accepts_analyze_log(self):
         if str(PROJECT_ROOT) not in sys.path:

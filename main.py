@@ -16,6 +16,7 @@ def parse_args(argv=None):
     parser.add_argument("--video-test", action="store_true", help="Interactive video test with GUI file picker")
     parser.add_argument("--output", choices=["null", "log", "win_mouse"], default="null", help="Modular output backend")
     parser.add_argument("--real-mouse", action="store_true", help="Allow real mouse movement when --output win_mouse is selected")
+    parser.add_argument("--mouse-method", choices=["set_cursor", "sendinput"], default="set_cursor", help="Windows mouse sender for --output win_mouse")
     parser.add_argument("--diagnostics", default="", help="Write modular diagnostics JSONL to this path")
     parser.add_argument("--analyze-log", default="", help="Analyze a modular diagnostics JSONL file")
     return parser.parse_args(argv)
@@ -42,6 +43,7 @@ def _run_modular(args):
     config = load_modular_config("config.json")
     config.output.backend = args.output
     config.output.enable_real_mouse = bool(args.real_mouse)
+    config.output.mouse_method = args.mouse_method
     config.diagnostics.jsonl_path = args.diagnostics
     if args.video:
         from visual_aiming.app.replay import run_video_file

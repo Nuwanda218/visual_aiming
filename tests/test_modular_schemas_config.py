@@ -109,6 +109,7 @@ class ModularConfigTest(unittest.TestCase):
             "servo_deadzone": 3.0,
             "servo_step_limit": 12,
             "mouse_absolute_mode_enabled": True,
+            "modular_mouse_method": "sendinput",
         })
 
         self.assertEqual(config.frame.roi_size, (500, 300))
@@ -124,6 +125,7 @@ class ModularConfigTest(unittest.TestCase):
         self.assertEqual(config.control.max_step, 12)
         self.assertEqual(config.output.command_mode, "absolute")
         self.assertEqual(config.output.backend, "null")
+        self.assertEqual(config.output.mouse_method, "sendinput")
 
 
 if __name__ == "__main__":

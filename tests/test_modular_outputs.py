@@ -105,7 +105,9 @@ class OutputBackendTest(unittest.TestCase):
         self.assertEqual(fake_user32.positions, [(107, 197)])
 
     def test_sendinput_relative_move_sends_mouse_input_delta(self):
-        from visual_aiming.adapters.outputs.win_mouse import MOUSEEVENTF_MOVE, send_relative_move_sendinput
+        import ctypes
+
+        from visual_aiming.adapters.outputs.win_mouse import INPUT, MOUSEEVENTF_MOVE, send_relative_move_sendinput
 
         class FakeUser32:
             def __init__(self):
@@ -122,6 +124,16 @@ class OutputBackendTest(unittest.TestCase):
         send_relative_move_sendinput(7, -3, user32=fake_user32)
 
         self.assertEqual(fake_user32.calls[0][:5], (1, 0, 7, -3, MOUSEEVENTF_MOVE))
+        self.assertEqual(fake_user32.calls[0][5], ctypes.sizeof(INPUT))
+
+    def test_sendinput_input_struct_matches_windows_layout_size(self):
+        import ctypes
+
+        from visual_aiming.adapters.outputs.win_mouse import INPUT
+
+        expected = 40 if ctypes.sizeof(ctypes.c_void_p) == 8 else 28
+
+        self.assertEqual(ctypes.sizeof(INPUT), expected)
 
     def test_create_mouse_sender_selects_setcursor_or_sendinput(self):
         from visual_aiming.adapters.outputs.win_mouse import (

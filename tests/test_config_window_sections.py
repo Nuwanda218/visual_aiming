@@ -41,6 +41,13 @@ class ConfigWindowSectionsTest(unittest.TestCase):
             },
         )
 
+    def test_output_test_section_exposes_mouse_method(self):
+        sections = ConfigWindow(object(), "config.json")._sections()
+        output_keys = {item.key for item in dict(sections)["输出测试"]}
+
+        self.assertIn("mouse_method", output_keys)
+        self.assertIn("mouse_absolute_mode_enabled", output_keys)
+
     def test_advanced_tuning_keys_are_still_available(self):
         sections = ConfigWindow(object(), "config.json")._sections()
         keys = {

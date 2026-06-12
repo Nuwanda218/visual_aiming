@@ -3,9 +3,18 @@
 
 import argparse
 import ctypes
+import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Iterable, List, Tuple
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from visual_aiming.common.mouse_sender import create_mouse_sender, get_cursor_pos
 
 Move = Tuple[int, int]
 Sender = Callable[[int, int], None]
@@ -23,12 +32,8 @@ class ProbeArgs:
     count: int = 2
     delay: float = 1.5
     interval: float = 0.25
-    backend: str = "ctypes"
+    backend: str = "set_cursor"
     verify_cursor: bool = True
-
-
-class POINT(ctypes.Structure):
-    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
 
 
 def build_move_sequence(dx: int, dy: int, count: int) -> List[Move]:
@@ -39,16 +44,12 @@ def send_with_ctypes(dx: int, dy: int) -> None:
     ctypes.windll.user32.mouse_event(MOUSEEVENTF_MOVE, int(dx), int(dy), 0, 0)
 
 
-def get_cursor_pos() -> Tuple[int, int]:
-    point = POINT()
-    ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
-    return int(point.x), int(point.y)
-
-
 def select_sender(backend: str) -> Sender:
-    normalized = (backend or "ctypes").strip().lower()
+    normalized = (backend or "set_cursor").strip().lower().replace("-", "_")
     if normalized in {"ctypes", "mouse_event", "win32"}:
         return send_with_ctypes
+    if normalized in {"set_cursor", "setcursor", "cursor", "sendinput", "send_input"}:
+        return create_mouse_sender(normalized)
     raise ValueError(f"unsupported mouse backend: {backend}")
 
 
@@ -61,12 +62,17 @@ def run_probe(
     printer: Printer = print,
 ) -> None:
     sequence = build_move_sequence(args.dx, args.dy, args.count)
+    printer(f"backend={args.backend}, moves={len(sequence)}, delay={args.delay}, interval={args.interval}")
     start_pos = cursor_reader() if verify_cursor else None
+    if verify_cursor and start_pos is not None:
+        printer(f"start cursor: x={start_pos[0]}, y={start_pos[1]}")
 
     if args.delay > 0:
+        printer(f"waiting {args.delay:.2f}s before first move")
         sleeper(args.delay)
 
     for index, (dx, dy) in enumerate(sequence):
+        printer(f"send {index + 1}/{len(sequence)}: dx={dx}, dy={dy}")
         sender(dx, dy)
         if index < len(sequence) - 1 and args.interval > 0:
             sleeper(args.interval)
@@ -76,6 +82,7 @@ def run_probe(
         delta_x = end_pos[0] - start_pos[0]
         delta_y = end_pos[1] - start_pos[1]
         printer(f"observed cursor delta: dx={delta_x}, dy={delta_y}")
+    printer("done")
 
 
 def parse_args(argv: Iterable[str] | None = None) -> ProbeArgs:
@@ -85,7 +92,7 @@ def parse_args(argv: Iterable[str] | None = None) -> ProbeArgs:
     parser.add_argument("--count", type=int, default=2)
     parser.add_argument("--delay", type=float, default=1.5)
     parser.add_argument("--interval", type=float, default=0.25)
-    parser.add_argument("--backend", default="ctypes")
+    parser.add_argument("--backend", default="set_cursor", choices=["set_cursor", "sendinput", "mouse_event"])
     parser.add_argument("--no-verify", action="store_true")
     ns = parser.parse_args(argv)
     return ProbeArgs(
@@ -102,7 +109,7 @@ def parse_args(argv: Iterable[str] | None = None) -> ProbeArgs:
 def main(argv: Iterable[str] | None = None) -> None:
     args = parse_args(argv)
     sender = select_sender(args.backend)
-    run_probe(args, sender=sender, verify_cursor=args.verify_cursor)
+    run_probe(args, sender=sender, verify_cursor=args.verify_cursor, printer=lambda message: print(message, flush=True))
 
 
 if __name__ == "__main__":

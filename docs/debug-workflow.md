@@ -86,3 +86,16 @@ Before changing target selection or target-lost handling, collect at least one f
 - display FPS p50/avg
 - frame work p50/p95
 - insight codes
+
+## 6. Mouse Output Probe
+
+Before judging algorithm control quality in-game, compare the two Windows sender methods on the desktop:
+
+```powershell
+.venv\Scripts\python.exe scripts\mouse_gain_probe.py --backend set_cursor --dx 80 --dy 0 --count 2
+.venv\Scripts\python.exe scripts\mouse_gain_probe.py --backend sendinput --dx 80 --dy 0 --count 2
+```
+
+Use `set_cursor` for the conservative `GetCursorPos + SetCursorPos` path. Use `sendinput` for Win32 relative mouse movement. If both move the desktop cursor but only one works in-game, the difference is likely in how the game reads mouse input.
+
+The probe prints each send step before calling the sender and prints `done` at the end. If `sendinput` returns but the observed desktop delta differs from the requested delta, Windows pointer speed/acceleration may be scaling relative input. Use larger deltas such as `--dx 80` before judging that movement failed.

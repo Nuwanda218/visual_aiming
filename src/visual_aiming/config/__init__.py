@@ -72,6 +72,7 @@ class Config:
     servo_overshoot_guard_ratio: float = 0.30
     servo_overshoot_guard_min_step: float = 0.0
     servo_overshoot_guard_deadzone_scale: float = 1.45
+    mouse_method: str = "set_cursor"
     mouse_absolute_mode_enabled: bool = False
     mouse_absolute_smooth_factor: float = 1.0
     mouse_absolute_max_step: float = 0.0

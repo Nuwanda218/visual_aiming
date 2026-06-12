@@ -1,36 +1,18 @@
 # -*- coding: utf-8 -*-
-import ctypes
-import ctypes.wintypes
 import math
 import threading
 import time
 from typing import Optional, Tuple
 
+from ..common.mouse_sender import create_mouse_sender, get_cursor_pos, set_cursor_pos
 from ..common.timing import sleep_precise
 from ..common.utils import ThrottledPrinter
 
-user32 = ctypes.windll.user32
-MOUSEEVENTF_MOVE = 0x0001
-
-
-def send_relative_move(dx: int, dy: int):
-    """发送相对鼠标移动事件"""
-    user32.mouse_event(MOUSEEVENTF_MOVE, dx, dy, 0, 0)
-
-
-def set_cursor_pos(x: float, y: float):
-    user32.SetCursorPos(int(round(x)), int(round(y)))
-
-
-def get_cursor_pos() -> Tuple[int, int]:
-    pt = ctypes.wintypes.POINT()
-    user32.GetCursorPos(ctypes.byref(pt))
-    return (pt.x, pt.y)
-
 
 class MouseController:
-    def __init__(self, config):
+    def __init__(self, config, move_sender=None):
         self.config = config
+        self.move_sender = move_sender or create_mouse_sender(getattr(config, "mouse_method", "set_cursor"))
         self.thread_enabled = bool(getattr(config, "servo_thread_enabled", True))
         self.state_lock = threading.Lock()
         self.stop_event = threading.Event()
@@ -219,12 +201,8 @@ class MouseController:
         if send_x == 0 and send_y == 0:
             return
 
-        # 将相对移动改为绝对移动
-        current_x, current_y = get_cursor_pos()
-        target_x = current_x + send_x
-        target_y = current_y + send_y
-        set_cursor_pos(target_x, target_y)
-        
+        self.move_sender(send_x, send_y)
+
         self._apply_output_feedback(send_x, send_y, dt)
 
         if self.printer is not None:

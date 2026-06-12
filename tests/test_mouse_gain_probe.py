@@ -39,12 +39,20 @@ class MouseGainProbeTests(unittest.TestCase):
         self.assertEqual(sent, [(80, 0), (80, 0)])
         self.assertEqual(sleeps, [1.5, 0.25])
         self.assertTrue(any("observed cursor delta: dx=80, dy=0" in item for item in printed))
+        self.assertTrue(any("send 1/2: dx=80, dy=0" in item for item in printed))
+        self.assertTrue(any("done" in item for item in printed))
 
     def test_select_sender_rejects_unknown_backend(self):
         probe = load_probe_module()
 
         with self.assertRaises(ValueError):
             probe.select_sender("bad-backend")
+
+    def test_select_sender_accepts_setcursor_and_sendinput(self):
+        probe = load_probe_module()
+
+        self.assertTrue(callable(probe.select_sender("set_cursor")))
+        self.assertTrue(callable(probe.select_sender("sendinput")))
 
 
 if __name__ == "__main__":

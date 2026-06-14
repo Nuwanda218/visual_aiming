@@ -5,24 +5,31 @@ from typing import List, Optional
 from visual_aiming.adapters.frame_sources.video_file import VideoFileFrameSource
 from visual_aiming.app.realtime import create_pipeline
 from visual_aiming.config.schema import ModularConfig
+from visual_aiming.core.runtime_runner import RuntimeRunner
 from visual_aiming.core.schemas import PipelineTickResult
 
 
-def run_replay(config: ModularConfig, frame_source, detector=None, output_backend=None, diagnostics=None) -> List[PipelineTickResult]:
+def run_replay(
+    config: ModularConfig,
+    frame_source,
+    detector=None,
+    output_backend=None,
+    diagnostics=None,
+    pipeline=None,
+) -> List[PipelineTickResult]:
     """Run all frames from *frame_source* through the modular pipeline and return results."""
-    pipeline = create_pipeline(config, detector=detector, output_backend=output_backend, diagnostics=diagnostics)
-    results: List[PipelineTickResult] = []
+    pipeline = pipeline or create_pipeline(config, detector=detector, output_backend=output_backend, diagnostics=diagnostics)
+    runner = RuntimeRunner(frame_source, pipeline, clock=lambda: None)
     try:
-        while True:
-            frame = frame_source.read()
-            if frame is None:
-                break
-            results.append(pipeline.tick(frame, now=frame.timestamp))
+        results: List[PipelineTickResult] = runner.run()
     finally:
-        frame_source.close()
-        pipeline.output_backend.close()
-        if pipeline.diagnostics is not None:
-            pipeline.diagnostics.close()
+        runner.close()
+        output = getattr(pipeline, "output_backend", None)
+        if output is not None:
+            output.close()
+        pipeline_diagnostics = getattr(pipeline, "diagnostics", None)
+        if pipeline_diagnostics is not None:
+            pipeline_diagnostics.close()
     return results
 
 

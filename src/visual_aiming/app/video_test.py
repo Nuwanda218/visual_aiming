@@ -27,6 +27,7 @@ from visual_aiming.config.loader import load_modular_config
 from visual_aiming.config.schema import ModularConfig
 from visual_aiming.core.metrics import JsonlDiagnostics
 from visual_aiming.core.pipeline import ModularPipeline
+from visual_aiming.core.runtime_runner import RuntimeRunner
 from visual_aiming.core.schemas import (
     ControlCommand,
     FramePacket,
@@ -34,6 +35,31 @@ from visual_aiming.core.schemas import (
     RuntimeMode,
     RuntimeTelemetry,
 )
+
+
+class _SingleFrameSource:
+    def __init__(self, frame: FramePacket) -> None:
+        self.frame = frame
+        self.consumed = False
+
+    def read(self):
+        if self.consumed:
+            return None
+        self.consumed = True
+        return self.frame
+
+
+class VideoDebugObserver:
+    def __init__(self):
+        self.latest_frame = None
+        self.latest_result = None
+
+    def on_tick(self, frame, result) -> None:
+        self.latest_frame = frame
+        self.latest_result = result
+
+    def close(self) -> None:
+        return None
 
 
 def _select_video_file() -> Optional[str]:
@@ -100,6 +126,7 @@ class VideoTestRunner:
         self.sequence = 0
         self.current_frame: Optional[np.ndarray] = None
         self.last_result: Optional[PipelineTickResult] = None
+        self.debug_observer = VideoDebugObserver()
         self.last_frame_work_ms = 0.0
         self.last_wait_ms = 0
         self.display_fps = 0.0
@@ -174,12 +201,22 @@ class VideoTestRunner:
     def _tick(self) -> None:
         """激活状态：跑完整管道 + 真实鼠标移动。"""
         frame_packet = self._make_frame_packet(active=True)
-        self.last_result = self.pipeline.tick(frame_packet, now=time.perf_counter())
+        self._run_frame_packet(frame_packet)
 
     def _tick_passive(self) -> None:
         """暂停状态的单帧前进：检测但不移动鼠标。"""
         frame_packet = self._make_frame_packet(active=False)
-        self.last_result = self.pipeline.tick(frame_packet, now=time.perf_counter())
+        self._run_frame_packet(frame_packet)
+
+    def _run_frame_packet(self, frame_packet: FramePacket) -> None:
+        runner = RuntimeRunner(
+            _SingleFrameSource(frame_packet),
+            self.pipeline,
+            observers=[self.debug_observer],
+            clock=time.perf_counter,
+        )
+        _, result = runner.run_once()
+        self.last_result = result
 
     def _warmup_detector(self) -> None:
         if self.current_frame is None:

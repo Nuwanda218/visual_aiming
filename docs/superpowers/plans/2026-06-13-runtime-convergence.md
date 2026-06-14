@@ -1,184 +1,199 @@
-# Runtime Convergence Implementation Plan
+# Single Runtime Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make legacy realtime runtime and modular replay/video-test runtime converge onto shared contracts, shared diagnostics, and eventually one realtime composition path without changing mouse angular-control behavior in this phase.
+**Goal:** Make the current modular video-test/replay logic the only runtime logic for the whole program, so testing and real use share the same pipeline and differ only by input source, output backend, and optional debug observers.
 
-**Architecture:** Keep the current legacy realtime loop working while extracting shared data contracts and reusable services. Migrate behavior from the outside inward: first document and test boundaries, then unify output/config/diagnostics, then introduce a modular realtime runner behind an explicit flag, and only after parity tests pass switch the default path. This avoids a full rewrite and prevents video-test behavior from drifting away from real realtime behavior.
+**Architecture:** The final program has one runtime runner: `FrameSource.read()` feeds `ModularPipeline.tick()`, pipeline results go to output and diagnostics, and optional observers render debug UI. Video test uses `VideoFileFrameSource`; realtime use uses `ScreenFrameSource`; mouse output is just one output backend. The old legacy realtime runtime remains only as a temporary fallback during migration and is deleted after realtime parity is verified.
 
-**Tech Stack:** Python, `unittest`, existing `visual_aiming` package, current YOLO detector adapter, current screenshot/capture services, current mouse sender abstraction.
+**Tech Stack:** Python, `unittest`, existing `ModularPipeline`, existing frame-source adapters, existing output adapters, existing JSONL diagnostics and video debug UI.
 
 ---
 
-## Current Situation
+## Corrected Direction
 
-This is not a live resource conflict. In normal use, old and new runtimes do not run at the same time.
+Previous direction was "make old and new runtime compatible." That is no longer the target.
 
-Current route map:
+The target is:
 
-- `python main.py` calls `visual_aiming.core.runtime.main()` and uses the legacy realtime loop.
-- `python main.py --video-test` calls `visual_aiming.app.video_test.run_video_test()` and uses modular video diagnostics.
-- `python main.py --modular --video <file>` calls `visual_aiming.app.replay.run_video_file()` and uses `ModularPipeline`.
-- `python main.py --modular` without `--video` currently falls back to the legacy realtime loop.
+```text
+one runtime runner
++ interchangeable input source
++ interchangeable output backend
++ optional debug observer
+```
 
-The real problem is duplicated behavior:
+Expected final shape:
 
-- Legacy realtime uses `RuntimePipeline`, `RuntimeServices`, and `MouseController`.
-- Modular replay/video paths use `ModularPipeline`, modular adapters, `RelativeController`, and output backends.
-- Some behavior is already converging, especially mouse output through `src/visual_aiming/common/mouse_sender.py`.
-- Some behavior is still split, especially realtime orchestration, config mapping, diagnostic event shape, and control-stage data models.
+```text
+Video test:
+VideoFileFrameSource -> ModularPipeline -> Null/LogOutput -> VideoDebugObserver
+
+Video replay:
+VideoFileFrameSource -> ModularPipeline -> Null/LogOutput
+
+Realtime:
+ScreenFrameSource -> ModularPipeline -> WinMouseOutput/NullOutput -> optional diagnostics
+```
+
+The old runtime path:
+
+```text
+visual_aiming.core.runtime.main()
+RuntimePipeline
+MouseController realtime loop
+```
+
+is a migration source only. It should not remain as a parallel runtime after the new single runner can handle realtime input safely.
+
+## Already Completed
+
+These tasks were completed before this plan was corrected:
+
+- [x] Runtime route audit document was created at `docs/runtime-convergence.md`.
+- [x] `RuntimeMode` was added at `src/visual_aiming/core/runtime_modes.py`.
+- [x] `main.py` route choice became testable.
+- [x] `tests/test_runtime_modes.py` covers route choice.
+- [x] Commit `ae14d16 明确新旧运行时路由` was pushed to `origin/main`.
+
+These changes are still useful because explicit routing makes the migration safer. They are no longer the final architecture.
 
 ## Non-Goals
 
-- Do not implement angular mouse control here. That is covered by `docs/superpowers/plans/2026-06-13-mouse-angular-control.md`.
-- Do not directly port the whole realtime loop in one edit.
-- Do not delete `RuntimePipeline` until modular realtime has parity tests and manual validation.
-- Do not stage, reset, or rewrite `config.json`; it is user-local runtime state.
+- Do not implement angular mouse control in this plan. That remains in `docs/superpowers/plans/2026-06-13-mouse-angular-control.md`.
+- Do not tune detection quality here.
+- Do not keep two runtime algorithms long-term.
+- Do not move user-local `config.json` into commits.
+- Do not make real mouse output the default for tests.
 
 ## File Structure
 
 Create:
 
-- `docs/runtime-convergence.md`: human-readable map of old/new runtime routes, shared contracts, migration status, and manual validation notes.
-- `src/visual_aiming/core/runtime_modes.py`: pure entrypoint routing helpers and mode names.
-- `src/visual_aiming/core/realtime_composition.py`: modular realtime service composition, initially behind explicit opt-in.
-- `tests/test_runtime_modes.py`: tests for CLI/runtime routing decisions.
-- `tests/test_realtime_composition.py`: tests for modular realtime composition using fakes.
-- `tests/test_runtime_convergence_contracts.py`: tests that legacy and modular paths emit compatible diagnostic/control contract fields.
+- `src/visual_aiming/core/runtime_runner.py`: the single reusable loop for video replay, video test, and realtime.
+- `tests/test_runtime_runner.py`: fake-source/fake-pipeline/fake-output tests for the shared runner.
+- `tests/test_single_runtime_apps.py`: app-level tests proving replay and realtime call the same runner.
 
 Modify:
 
-- `main.py`: route through `runtime_modes.py` so mode choice is explicit and testable.
-- `src/visual_aiming/core/runtime.py`: keep legacy runtime, but expose small reusable pieces if needed; avoid adding more algorithm logic here.
-- `src/visual_aiming/core/runtime_services.py`: expose service construction boundaries clearly enough for tests and future modular reuse.
-- `src/visual_aiming/core/pipeline.py`: add compatibility helpers only if they reduce duplication with modular contracts.
-- `src/visual_aiming/core/modular_pipeline.py`: align diagnostic/control event fields with legacy where possible.
-- `src/visual_aiming/config/loader.py`: centralize legacy-to-modular config conversion instead of scattered ad hoc mapping.
-- `src/visual_aiming/app/replay.py`: keep using modular pipeline, but consume shared diagnostic schema if introduced.
-- `src/visual_aiming/app/video_test.py`: keep video-test UI behavior, but use shared diagnostics/output event formatting.
-- `tests/test_runtime_pipeline.py`, `tests/test_modular_pipeline.py`, `tests/test_modular_apps.py`: extend with parity tests rather than replacing existing tests.
+- `src/visual_aiming/app/replay.py`: use `RuntimeRunner` instead of owning its own loop.
+- `src/visual_aiming/app/video_test.py`: keep UI behavior, but use the same runner step or observer hook instead of duplicating pipeline flow.
+- `src/visual_aiming/app/realtime.py`: become the realtime composition for `ScreenFrameSource + ModularPipeline + Output`.
+- `main.py`: route realtime through the modular realtime app after the safe migration gate is passed.
+- `src/visual_aiming/core/pipeline.py`: keep `ModularPipeline`; later remove `RuntimePipeline` when no code imports it.
+- `src/visual_aiming/core/runtime.py`: delete after realtime no longer calls it.
+- `tests/test_runtime_pipeline.py`: delete or replace old-runtime tests after `RuntimePipeline` is removed.
+- `docs/runtime-convergence.md`: update from "convergence" to "single runtime migration" status.
 
-## Task 1: Boundary Audit Document
+## Core Contract
 
-**Files:**
-- Create: `docs/runtime-convergence.md`
-
-- [x] **Step 1: Write runtime route table**
-
-Create `docs/runtime-convergence.md` with this content:
-
-```markdown
-# Runtime Convergence
-
-## Route Table
-
-| Command | Runtime path | Pipeline | Mouse/control path | Status |
-| --- | --- | --- | --- | --- |
-| `python main.py` | `visual_aiming.core.runtime.main()` | `RuntimePipeline` | `MouseController` | Legacy realtime default |
-| `python main.py --video-test` | `visual_aiming.app.video_test.run_video_test()` | Modular video path | Modular control/output diagnostics | Active debug path |
-| `python main.py --modular --video <file>` | `visual_aiming.app.replay.run_video_file()` | `ModularPipeline` | Configured output backend | Active replay path |
-| `python main.py --modular` | Falls back to `visual_aiming.core.runtime.main()` | `RuntimePipeline` | `MouseController` | Temporary fallback |
-
-## Problem
-
-There is no normal single-process fight between old and new runtimes. The risk is behavior drift: fixes verified in video replay may not affect live realtime, and live-only behavior may not be covered by modular tests.
-
-## Convergence Rule
-
-Move shared behavior into small modules first. Keep realtime behavior stable until each shared contract has tests.
-
-## Migration Order
-
-1. Route decisions become explicit and testable.
-2. Diagnostics and control events use compatible field names.
-3. Config conversion lives in one place.
-4. Modular realtime composition exists behind an explicit flag.
-5. Manual parity testing decides when default realtime can switch.
-
-## Deferred
-
-Mouse angular control is intentionally deferred to `docs/superpowers/plans/2026-06-13-mouse-angular-control.md`.
-```
-
-- [x] **Step 2: Verify no stale wording**
-
-Run:
-
-```powershell
-.venv\Scripts\python.exe - <<'PY'
-from pathlib import Path
-p = Path("docs/runtime-convergence.md")
-text = p.read_text(encoding="utf-8")
-for word in ["未定占位", "待办占位", "争抢", "冲突导致"]:
-    assert word not in text, word
-assert "behavior drift" in text
-assert "Mouse angular control" in text
-print("runtime convergence doc ok")
-PY
-```
-
-Expected:
-
-```text
-runtime convergence doc ok
-```
-
-- [x] **Step 3: Explain task result to user**
-
-Explain:
-
-```text
-Task 1 完成：这一步没有改运行逻辑，只把新旧 runtime 的入口、当前状态、真实风险和迁移顺序写清楚。结论是当前不是资源争抢，而是行为分叉，需要逐步收敛。
-```
-
-## Task 2: Testable Runtime Mode Routing
-
-**Files:**
-- Create: `src/visual_aiming/core/runtime_modes.py`
-- Create: `tests/test_runtime_modes.py`
-- Modify: `main.py`
-
-- [x] **Step 1: Write failing routing tests**
-
-Create `tests/test_runtime_modes.py`:
+The single runtime loop must use this contract:
 
 ```python
-import argparse
+frame = frame_source.read()
+if frame is None:
+    stop
+result = pipeline.tick(frame, now=clock())
+observer.on_tick(frame, result)
+```
+
+Important details:
+
+- `ModularPipeline.tick()` already owns output publishing through its output backend.
+- The runner should not know about YOLO, mouse control, or video UI internals.
+- Debug UI is an observer, not another runtime.
+- Realtime and video tests must exercise the same `ModularPipeline.tick()` call path.
+
+## Task 1: Runtime Runner Core
+
+**Files:**
+- Create: `src/visual_aiming/core/runtime_runner.py`
+- Create: `tests/test_runtime_runner.py`
+
+- [x] **Step 1: Write failing runner tests**
+
+Create `tests/test_runtime_runner.py`:
+
+```python
+import sys
 import unittest
+from pathlib import Path
 
-from visual_aiming.core.runtime_modes import RuntimeMode, choose_runtime_mode
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from visual_aiming.core.runtime_runner import RuntimeObserver, RuntimeRunner
 
 
-class RuntimeModeTests(unittest.TestCase):
-    def _args(self, **overrides):
-        values = {
-            "analyze_log": "",
-            "video_test": False,
-            "modular": False,
-            "video": "",
-        }
-        values.update(overrides)
-        return argparse.Namespace(**values)
+class FakeFrameSource:
+    def __init__(self, frames):
+        self.frames = list(frames)
+        self.closed = False
 
-    def test_analyze_log_wins(self):
-        mode = choose_runtime_mode(self._args(analyze_log="logs/run.jsonl"))
-        self.assertEqual(mode, RuntimeMode.ANALYZE_LOG)
+    def read(self):
+        return self.frames.pop(0) if self.frames else None
 
-    def test_video_test_wins_before_modular(self):
-        mode = choose_runtime_mode(self._args(video_test=True, modular=True, video="a.mp4"))
-        self.assertEqual(mode, RuntimeMode.VIDEO_TEST)
+    def close(self):
+        self.closed = True
 
-    def test_modular_video_replay(self):
-        mode = choose_runtime_mode(self._args(modular=True, video="a.mp4"))
-        self.assertEqual(mode, RuntimeMode.MODULAR_REPLAY)
 
-    def test_modular_realtime_opt_in(self):
-        mode = choose_runtime_mode(self._args(modular=True))
-        self.assertEqual(mode, RuntimeMode.MODULAR_REALTIME)
+class FakePipeline:
+    def __init__(self):
+        self.frames = []
 
-    def test_default_legacy_realtime(self):
-        mode = choose_runtime_mode(self._args())
-        self.assertEqual(mode, RuntimeMode.LEGACY_REALTIME)
+    def tick(self, frame, now=None):
+        self.frames.append((frame, now))
+        return {"frame": frame, "now": now}
+
+
+class FakeObserver(RuntimeObserver):
+    def __init__(self):
+        self.events = []
+        self.closed = False
+
+    def on_tick(self, frame, result):
+        self.events.append((frame, result))
+
+    def close(self):
+        self.closed = True
+
+
+class RuntimeRunnerTests(unittest.TestCase):
+    def test_run_until_source_returns_none(self):
+        source = FakeFrameSource(["a", "b"])
+        pipeline = FakePipeline()
+        observer = FakeObserver()
+        runner = RuntimeRunner(source, pipeline, observers=[observer], clock=lambda: 10.0)
+
+        results = runner.run()
+
+        self.assertEqual(results, [{"frame": "a", "now": 10.0}, {"frame": "b", "now": 10.0}])
+        self.assertEqual(pipeline.frames, [("a", 10.0), ("b", 10.0)])
+        self.assertEqual(observer.events, [("a", results[0]), ("b", results[1])])
+
+    def test_run_once_returns_false_without_frame(self):
+        source = FakeFrameSource([])
+        pipeline = FakePipeline()
+        runner = RuntimeRunner(source, pipeline, clock=lambda: 1.0)
+
+        has_frame, result = runner.run_once()
+
+        self.assertFalse(has_frame)
+        self.assertIsNone(result)
+        self.assertEqual(pipeline.frames, [])
+
+    def test_close_closes_source_and_observer(self):
+        source = FakeFrameSource([])
+        pipeline = FakePipeline()
+        observer = FakeObserver()
+        runner = RuntimeRunner(source, pipeline, observers=[observer])
+
+        runner.close()
+
+        self.assertTrue(source.closed)
+        self.assertTrue(observer.closed)
 
 
 if __name__ == "__main__":
@@ -190,387 +205,287 @@ if __name__ == "__main__":
 Run:
 
 ```powershell
-.venv\Scripts\python.exe -m unittest tests.test_runtime_modes -v
+.venv\Scripts\python.exe -m unittest tests.test_runtime_runner -v
 ```
 
-Expected: fail with `ModuleNotFoundError` for `visual_aiming.core.runtime_modes`.
+Expected: fail because `visual_aiming.core.runtime_runner` does not exist.
 
-- [x] **Step 3: Add runtime mode helper**
+- [x] **Step 3: Implement runner**
 
-Create `src/visual_aiming/core/runtime_modes.py`:
+Create `src/visual_aiming/core/runtime_runner.py`:
 
 ```python
 from __future__ import annotations
 
-from enum import Enum
+import time
+from typing import Callable, Iterable, Protocol
 
 
-class RuntimeMode(str, Enum):
-    ANALYZE_LOG = "analyze_log"
-    VIDEO_TEST = "video_test"
-    MODULAR_REPLAY = "modular_replay"
-    MODULAR_REALTIME = "modular_realtime"
-    LEGACY_REALTIME = "legacy_realtime"
+class RuntimeObserver(Protocol):
+    def on_tick(self, frame, result) -> None:
+        ...
+
+    def close(self) -> None:
+        ...
 
 
-def choose_runtime_mode(args) -> RuntimeMode:
-    if getattr(args, "analyze_log", ""):
-        return RuntimeMode.ANALYZE_LOG
-    if getattr(args, "video_test", False):
-        return RuntimeMode.VIDEO_TEST
-    if getattr(args, "modular", False) and getattr(args, "video", ""):
-        return RuntimeMode.MODULAR_REPLAY
-    if getattr(args, "modular", False):
-        return RuntimeMode.MODULAR_REALTIME
-    return RuntimeMode.LEGACY_REALTIME
+class RuntimeRunner:
+    def __init__(
+        self,
+        frame_source,
+        pipeline,
+        observers: Iterable[RuntimeObserver] | None = None,
+        clock: Callable[[], float] | None = None,
+    ) -> None:
+        self.frame_source = frame_source
+        self.pipeline = pipeline
+        self.observers = list(observers or [])
+        self.clock = clock or time.perf_counter
+
+    def run_once(self):
+        frame = self.frame_source.read()
+        if frame is None:
+            return False, None
+        result = self.pipeline.tick(frame, now=self.clock())
+        for observer in self.observers:
+            observer.on_tick(frame, result)
+        return True, result
+
+    def run(self, max_frames: int | None = None):
+        results = []
+        while max_frames is None or len(results) < max_frames:
+            has_frame, result = self.run_once()
+            if not has_frame:
+                break
+            results.append(result)
+        return results
+
+    def close(self) -> None:
+        for obj in [self.frame_source, *self.observers]:
+            close = getattr(obj, "close", None)
+            if close is not None:
+                close()
 ```
 
-- [x] **Step 4: Route `main.py` through helper**
-
-Modify `main.py` so `main(argv=None)` follows this structure:
-
-```python
-def main(argv=None):
-    args = parse_args(argv)
-    from visual_aiming.core.runtime_modes import RuntimeMode, choose_runtime_mode
-
-    mode = choose_runtime_mode(args)
-    if mode == RuntimeMode.ANALYZE_LOG:
-        from visual_aiming.app.log_analyzer import analyze_jsonl, format_report
-
-        print(format_report(analyze_jsonl(args.analyze_log)))
-        return 0
-    if mode == RuntimeMode.VIDEO_TEST:
-        from visual_aiming.app.video_test import run_video_test
-
-        return run_video_test()
-    if mode in (RuntimeMode.MODULAR_REPLAY, RuntimeMode.MODULAR_REALTIME):
-        return _run_modular(args, mode=mode)
-    from visual_aiming.core.runtime import main as legacy_main
-
-    return legacy_main()
-```
-
-Change `_run_modular` signature and keep temporary fallback explicit:
-
-```python
-def _run_modular(args, mode=None):
-    from visual_aiming.config.loader import load_modular_config
-    from visual_aiming.core.runtime_modes import RuntimeMode
-
-    config = load_modular_config("config.json")
-    config.output.backend = args.output
-    config.output.real_mouse = args.real_mouse
-    config.output.diagnostics_path = args.diagnostics or config.output.diagnostics_path
-
-    if mode == RuntimeMode.MODULAR_REPLAY:
-        from visual_aiming.app.replay import run_video_file
-
-        return run_video_file(args.video, config)
-
-    from visual_aiming.core.runtime import main as legacy_main
-
-    print("[modular] Realtime modular composition is not default yet; falling back to legacy realtime loop.")
-    return legacy_main()
-```
-
-- [x] **Step 5: Run routing tests**
+- [x] **Step 4: Verify runner tests**
 
 Run:
 
 ```powershell
-.venv\Scripts\python.exe -m unittest tests.test_runtime_modes -v
+.venv\Scripts\python.exe -m unittest tests.test_runtime_runner -v
 ```
 
 Expected: all tests pass.
 
-- [x] **Step 6: Run existing app tests**
-
-Run:
-
-```powershell
-.venv\Scripts\python.exe -m unittest tests.test_modular_apps tests.test_runtime_pipeline -v
-```
-
-Expected: all tests pass.
-
-- [x] **Step 7: Explain task result to user**
+- [x] **Step 5: Explain task result to user**
 
 Explain:
 
 ```text
-Task 2 完成：入口选择从 main.py 里的隐式 if 分支变成可测试的 RuntimeMode。运行行为基本不变，`--modular` 实时仍然回退旧 runtime，但现在这个临时状态被明确命名，后续迁移不会靠猜。
+Task 1 完成：新增了唯一运行循环 RuntimeRunner。它不关心视频、屏幕、鼠标或 YOLO，只负责 frame_source.read() -> pipeline.tick() -> observer.on_tick()。这是后面让视频测试和实际运行复用同一逻辑的核心。
 ```
 
-## Task 3: Shared Diagnostic Contract
+## Task 2: Replay Uses RuntimeRunner
 
 **Files:**
-- Create: `src/visual_aiming/core/diagnostic_events.py`
-- Create: `tests/test_runtime_convergence_contracts.py`
-- Modify: `src/visual_aiming/core/modular_pipeline.py`
-- Modify: `src/visual_aiming/actions/mouse_control.py`
+- Modify: `src/visual_aiming/app/replay.py`
+- Modify: `tests/test_modular_apps.py`
+- Test: `tests/test_runtime_runner.py`
 
-- [ ] **Step 1: Write failing diagnostic contract tests**
+- [x] **Step 1: Add replay-level test**
 
-Create `tests/test_runtime_convergence_contracts.py`:
+Add this test to `tests/test_modular_apps.py`:
 
 ```python
+    def test_replay_runner_uses_runtime_runner(self):
+        from visual_aiming.app.replay import run_replay
+        from visual_aiming.config.schema import ModularConfig
+
+        class Source:
+            def __init__(self):
+                self.frames = ["one", "two"]
+
+            def read(self):
+                return self.frames.pop(0) if self.frames else None
+
+        class Pipeline:
+            def __init__(self):
+                self.frames = []
+
+            def tick(self, frame, now=None):
+                self.frames.append(frame)
+                return {"frame": frame}
+
+        pipeline = Pipeline()
+        results = run_replay(ModularConfig(), Source(), pipeline=pipeline)
+
+        self.assertEqual(results, [{"frame": "one"}, {"frame": "two"}])
+        self.assertEqual(pipeline.frames, ["one", "two"])
+```
+
+- [x] **Step 2: Run replay tests**
+
+Run:
+
+```powershell
+.venv\Scripts\python.exe -m unittest tests.test_modular_apps -v
+```
+
+Expected: fail because `run_replay()` does not yet accept `pipeline=`.
+
+- [x] **Step 3: Update replay implementation**
+
+Modify `src/visual_aiming/app/replay.py` so `run_replay()` accepts an optional pipeline and delegates to `RuntimeRunner`:
+
+```python
+from visual_aiming.core.runtime_runner import RuntimeRunner
+
+
+def run_replay(config, frame_source, detector=None, output_backend=None, diagnostics=None, pipeline=None):
+    pipeline = pipeline or create_pipeline(
+        config,
+        detector=detector,
+        output_backend=output_backend,
+        diagnostics=diagnostics,
+    )
+    runner = RuntimeRunner(frame_source, pipeline)
+    try:
+        return runner.run()
+    finally:
+        runner.close()
+```
+
+Keep `run_video_file(config, video_path, roi_offset=(0, 0), crosshair=(0, 0))` calling `run_replay(config, source)`.
+
+- [x] **Step 4: Verify replay tests**
+
+Run:
+
+```powershell
+.venv\Scripts\python.exe -m unittest tests.test_modular_apps tests.test_runtime_runner -v
+```
+
+Expected: all tests pass.
+
+- [x] **Step 5: Explain task result to user**
+
+Explain:
+
+```text
+Task 2 完成：视频回放不再拥有自己的循环，而是调用 RuntimeRunner。视频回放现在已经走“唯一运行逻辑”的第一条路径。
+```
+
+## Task 3: Video Test Uses Runner Step
+
+**Files:**
+- Modify: `src/visual_aiming/app/video_test.py`
+- Create or modify: `tests/test_video_test_runtime_runner.py`
+
+- [x] **Step 1: Add video-test observer test**
+
+Create `tests/test_video_test_runtime_runner.py`:
+
+```python
+import sys
 import unittest
+from pathlib import Path
 
-from visual_aiming.core.diagnostic_events import normalize_control_event
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from visual_aiming.app.video_test import VideoDebugObserver
 
 
-class DiagnosticContractTests(unittest.TestCase):
-    def test_normalize_modular_control_event(self):
-        event = normalize_control_event(
-            {
-                "seq": 12,
-                "target_found": True,
-                "target_lost": False,
-                "command": {"dx": 3.5, "dy": -2.0},
-                "output": {"backend": "null", "sent": True},
-            }
-        )
+class VideoDebugObserverTests(unittest.TestCase):
+    def test_observer_records_latest_frame_and_result(self):
+        observer = VideoDebugObserver()
 
-        self.assertEqual(event["seq"], 12)
-        self.assertTrue(event["target_found"])
-        self.assertFalse(event["target_lost"])
-        self.assertEqual(event["command_dx"], 3.5)
-        self.assertEqual(event["command_dy"], -2.0)
-        self.assertEqual(event["output_backend"], "null")
-        self.assertTrue(event["output_sent"])
+        observer.on_tick("frame", {"seq": 1})
 
-    def test_normalize_legacy_mouse_diagnostics(self):
-        event = normalize_control_event(
-            {
-                "seq": 5,
-                "mouse_diagnostics": {
-                    "last_command": [1, 2],
-                    "sender": "sendinput",
-                    "sent_moves": 4,
-                    "zero_outputs": 1,
-                },
-            }
-        )
-
-        self.assertEqual(event["seq"], 5)
-        self.assertEqual(event["command_dx"], 1)
-        self.assertEqual(event["command_dy"], 2)
-        self.assertEqual(event["output_backend"], "sendinput")
-        self.assertTrue(event["output_sent"])
-        self.assertEqual(event["sent_moves"], 4)
-        self.assertEqual(event["zero_outputs"], 1)
+        self.assertEqual(observer.latest_frame, "frame")
+        self.assertEqual(observer.latest_result, {"seq": 1})
 
 
 if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
 ```powershell
-.venv\Scripts\python.exe -m unittest tests.test_runtime_convergence_contracts -v
+.venv\Scripts\python.exe -m unittest tests.test_video_test_runtime_runner -v
 ```
 
-Expected: fail with `ModuleNotFoundError` for `visual_aiming.core.diagnostic_events`.
+Expected: fail because `VideoDebugObserver` does not exist.
 
-- [ ] **Step 3: Add diagnostic normalizer**
+- [x] **Step 3: Add observer and route one-frame processing through runner**
 
-Create `src/visual_aiming/core/diagnostic_events.py`:
+In `src/visual_aiming/app/video_test.py`, add:
 
 ```python
-from __future__ import annotations
+class VideoDebugObserver:
+    def __init__(self):
+        self.latest_frame = None
+        self.latest_result = None
 
-from typing import Any
+    def on_tick(self, frame, result) -> None:
+        self.latest_frame = frame
+        self.latest_result = result
 
-
-def _command_pair(value: Any) -> tuple[float, float]:
-    if isinstance(value, dict):
-        return float(value.get("dx", 0.0)), float(value.get("dy", 0.0))
-    if isinstance(value, (list, tuple)) and len(value) >= 2:
-        return float(value[0]), float(value[1])
-    return 0.0, 0.0
-
-
-def normalize_control_event(event: dict[str, Any]) -> dict[str, Any]:
-    mouse = event.get("mouse_diagnostics") or {}
-    command = event.get("command", mouse.get("last_command", (0.0, 0.0)))
-    command_dx, command_dy = _command_pair(command)
-    output = event.get("output") or {}
-    sent_moves = int(mouse.get("sent_moves", 0))
-
-    return {
-        "seq": event.get("seq"),
-        "target_found": bool(event.get("target_found", False)),
-        "target_lost": bool(event.get("target_lost", False)),
-        "command_dx": command_dx,
-        "command_dy": command_dy,
-        "output_backend": output.get("backend", mouse.get("sender", "")),
-        "output_sent": bool(output.get("sent", sent_moves > 0)),
-        "sent_moves": sent_moves,
-        "zero_outputs": int(mouse.get("zero_outputs", 0)),
-    }
+    def close(self) -> None:
+        return None
 ```
 
-- [ ] **Step 4: Use normalizer at log boundaries**
+Then replace direct per-frame `pipeline.tick(...)` calls with `RuntimeRunner(..., observers=[debug_observer]).run_once()` where video-test processes frames. Preserve existing overlay, keyboard, delay, and diagnostics behavior.
 
-In `src/visual_aiming/core/modular_pipeline.py`, import:
-
-```python
-from .diagnostic_events import normalize_control_event
-```
-
-When emitting diagnostics, include:
-
-```python
-event["control_contract"] = normalize_control_event(event)
-```
-
-In `src/visual_aiming/actions/mouse_control.py`, wherever `mouse_diagnostics` is printed or attached, add normalized fields beside the raw diagnostics:
-
-```python
-from visual_aiming.core.diagnostic_events import normalize_control_event
-
-event["control_contract"] = normalize_control_event(event)
-```
-
-If the legacy path only prints a dict and not a named `event`, wrap the existing dict before printing:
-
-```python
-payload = {"seq": seq, "mouse_diagnostics": diagnostics}
-payload["control_contract"] = normalize_control_event(payload)
-```
-
-- [ ] **Step 5: Run diagnostic tests**
+- [x] **Step 4: Verify video-test tests**
 
 Run:
 
 ```powershell
-.venv\Scripts\python.exe -m unittest tests.test_runtime_convergence_contracts tests.test_modular_pipeline tests.test_mouse_control -v
+.venv\Scripts\python.exe -m unittest tests.test_video_test_runtime_runner tests.test_modular_apps -v
 ```
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Explain task result to user**
+- [x] **Step 5: Explain task result to user**
 
 Explain:
 
 ```text
-Task 3 完成：没有改变算法，只给新旧路径的控制/鼠标诊断加了一层统一 contract。以后分析日志时可以看统一字段，不必每次区分这是旧 MouseController 还是新 ModularPipeline 输出。
+Task 3 完成：视频测试仍然保留调试界面，但帧处理不再是独立逻辑。它通过 RuntimeRunner 走和回放、实时相同的 frame -> pipeline.tick 路径。
 ```
 
-## Task 4: Centralized Config Mapping
+## Task 4: Realtime Uses Same Runner
 
 **Files:**
-- Modify: `src/visual_aiming/config/loader.py`
-- Modify: `src/visual_aiming/config/__init__.py`
-- Create or extend: `tests/test_modular_schemas_config.py`
-
-- [ ] **Step 1: Write config mapping tests**
-
-Add to `tests/test_modular_schemas_config.py`:
-
-```python
-class ConfigMappingTests(unittest.TestCase):
-    def test_modular_config_receives_mouse_output_fields(self):
-        from visual_aiming.config import Config
-        from visual_aiming.config.loader import legacy_to_modular_config
-
-        legacy = Config()
-        legacy.mouse_output_backend = "sendinput"
-        legacy.mouse_real_output_enabled = True
-        legacy.mouse_diagnostics_enabled = True
-
-        modular = legacy_to_modular_config(legacy)
-
-        self.assertEqual(modular.output.backend, "sendinput")
-        self.assertTrue(modular.output.real_mouse)
-        self.assertTrue(modular.output.mouse_diagnostics_enabled)
-
-    def test_modular_config_receives_roi_fields(self):
-        from visual_aiming.config import Config
-        from visual_aiming.config.loader import legacy_to_modular_config
-
-        legacy = Config()
-        legacy.roi_size = 416
-        legacy.roi_width = 320
-        legacy.roi_height = 240
-
-        modular = legacy_to_modular_config(legacy)
-
-        self.assertEqual(modular.frame.roi_size, (320, 240))
-```
-
-If `Config` uses different exact field names, adjust only the field names to match `src/visual_aiming/config/__init__.py`; keep the assertion intent unchanged.
-
-- [ ] **Step 2: Run test to verify failure**
-
-Run:
-
-```powershell
-.venv\Scripts\python.exe -m unittest tests.test_modular_schemas_config -v
-```
-
-Expected: fail because `legacy_to_modular_config` does not yet provide all asserted fields.
-
-- [ ] **Step 3: Implement one conversion function**
-
-In `src/visual_aiming/config/loader.py`, add:
-
-```python
-def legacy_to_modular_config(legacy_config: Config) -> ModularConfig:
-    modular = ModularConfig()
-    roi_width = int(getattr(legacy_config, "roi_width", getattr(legacy_config, "roi_size", 640)))
-    roi_height = int(getattr(legacy_config, "roi_height", getattr(legacy_config, "roi_size", 640)))
-    modular.frame.roi_size = (roi_width, roi_height)
-    modular.output.backend = getattr(legacy_config, "mouse_output_backend", modular.output.backend)
-    modular.output.real_mouse = bool(getattr(legacy_config, "mouse_real_output_enabled", modular.output.real_mouse))
-    modular.output.mouse_diagnostics_enabled = bool(
-        getattr(legacy_config, "mouse_diagnostics_enabled", False)
-    )
-    return modular
-```
-
-Update `load_modular_config()` to use this function after loading the legacy config object, instead of duplicating field mapping inline.
-
-- [ ] **Step 4: Run config tests**
-
-Run:
-
-```powershell
-.venv\Scripts\python.exe -m unittest tests.test_modular_schemas_config tests.test_config_window_sections -v
-```
-
-Expected: all tests pass.
-
-- [ ] **Step 5: Explain task result to user**
-
-Explain:
-
-```text
-Task 4 完成：配置转换收敛到一个函数。后续新增参数时，只需要检查一个 legacy_to_modular_config 映射点，减少“调参窗口改了但模块化路径没吃到参数”的风险。
-```
-
-## Task 5: Modular Realtime Composition Behind Explicit Flag
-
-**Files:**
-- Create: `src/visual_aiming/core/realtime_composition.py`
-- Create: `tests/test_realtime_composition.py`
+- Modify: `src/visual_aiming/app/realtime.py`
+- Create: `tests/test_single_runtime_apps.py`
 - Modify: `main.py`
 
-- [ ] **Step 1: Write composition tests with fakes**
+- [x] **Step 1: Add realtime app test**
 
-Create `tests/test_realtime_composition.py`:
+Create `tests/test_single_runtime_apps.py`:
 
 ```python
+import sys
 import unittest
+from pathlib import Path
 
-from visual_aiming.core.realtime_composition import RealtimeComposition, run_modular_realtime_once
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from visual_aiming.app.realtime import run_realtime
+from visual_aiming.config.schema import ModularConfig
 
 
-class FakeFrameSource:
+class Source:
     def __init__(self):
         self.frames = ["frame"]
 
@@ -578,52 +493,111 @@ class FakeFrameSource:
         return self.frames.pop(0) if self.frames else None
 
 
-class FakePipeline:
+class Pipeline:
     def __init__(self):
         self.frames = []
 
-    def process_frame(self, frame):
+    def tick(self, frame, now=None):
         self.frames.append(frame)
-        return {"seq": len(self.frames), "target_found": False}
+        return {"frame": frame}
 
 
-class FakeOutput:
-    def __init__(self):
-        self.events = []
+class SingleRuntimeAppsTests(unittest.TestCase):
+    def test_realtime_uses_same_runner_contract(self):
+        pipeline = Pipeline()
+        results = run_realtime(ModularConfig(), frame_source=Source(), pipeline=pipeline, max_frames=1)
 
-    def send(self, event):
-        self.events.append(event)
-
-
-class RealtimeCompositionTests(unittest.TestCase):
-    def test_run_once_processes_frame_and_output(self):
-        source = FakeFrameSource()
-        pipeline = FakePipeline()
-        output = FakeOutput()
-        composition = RealtimeComposition(source, pipeline, output)
-
-        result = run_modular_realtime_once(composition)
-
-        self.assertTrue(result)
+        self.assertEqual(results, [{"frame": "frame"}])
         self.assertEqual(pipeline.frames, ["frame"])
-        self.assertEqual(output.events, [{"seq": 1, "target_found": False}])
-
-    def test_run_once_stops_when_no_frame(self):
-        source = FakeFrameSource()
-        source.frames.clear()
-        pipeline = FakePipeline()
-        output = FakeOutput()
-        composition = RealtimeComposition(source, pipeline, output)
-
-        result = run_modular_realtime_once(composition)
-
-        self.assertFalse(result)
-        self.assertEqual(pipeline.frames, [])
-        self.assertEqual(output.events, [])
 
 
 if __name__ == "__main__":
     unittest.main()
+```
+
+- [x] **Step 2: Run test to verify failure**
+
+Run:
+
+```powershell
+.venv\Scripts\python.exe -m unittest tests.test_single_runtime_apps -v
+```
+
+Expected: fail because `run_realtime()` is missing or does not accept `frame_source`, `pipeline`, and `max_frames`.
+
+- [x] **Step 3: Implement realtime composition through RuntimeRunner**
+
+Modify `src/visual_aiming/app/realtime.py`:
+
+```python
+from visual_aiming.adapters.frame_sources.screen_capture import ScreenFrameSource
+from visual_aiming.core.runtime_runner import RuntimeRunner
+
+
+def run_realtime(config, frame_source=None, detector=None, output_backend=None, diagnostics=None, pipeline=None, max_frames=None):
+    frame_source = frame_source or ScreenFrameSource(config.frame)
+    pipeline = pipeline or create_pipeline(
+        config,
+        frame_source=frame_source,
+        detector=detector,
+        output_backend=output_backend,
+        diagnostics=diagnostics,
+    )
+    runner = RuntimeRunner(frame_source, pipeline)
+    try:
+        return runner.run(max_frames=max_frames)
+    finally:
+        runner.close()
+```
+
+Keep `create_pipeline()` and `create_output_backend()` behavior unchanged.
+
+- [x] **Step 4: Route experimental modular realtime to this function**
+
+In `main.py`, keep default behavior unchanged for this task, but when `RuntimeMode.MODULAR_REALTIME` is selected, call `run_realtime(config)` only under an explicit safe flag if that flag already exists. If no safe flag exists yet, keep legacy fallback and finish this task with tests only.
+
+- [x] **Step 5: Verify realtime app tests**
+
+Run:
+
+```powershell
+.venv\Scripts\python.exe -m unittest tests.test_single_runtime_apps tests.test_modular_apps tests.test_runtime_modes -v
+```
+
+Expected: all tests pass.
+
+- [x] **Step 6: Explain task result to user**
+
+Explain:
+
+```text
+Task 4 完成：实时运行也有了同一套 RuntimeRunner 入口。到这里，视频回放、视频测试、实时运行都可以共享同一个运行循环；默认入口是否切换留到手动验证后决定。
+```
+
+## Task 5: Safe Default Switch to Single Runtime
+
+**Files:**
+- Modify: `main.py`
+- Modify: `docs/runtime-convergence.md`
+- Modify: `tests/test_runtime_modes.py`
+- Modify: `tests/test_single_runtime_apps.py`
+
+- [ ] **Step 1: Add route expectation test**
+
+Update `tests/test_runtime_modes.py` so default mode expectation becomes modular realtime:
+
+```python
+    def test_default_realtime_uses_modular_runtime(self):
+        mode = choose_runtime_mode(self._args())
+        self.assertEqual(mode, RuntimeMode.MODULAR_REALTIME)
+```
+
+Keep a separate escape hatch test:
+
+```python
+    def test_legacy_realtime_escape_hatch(self):
+        mode = choose_runtime_mode(self._args(legacy_runtime=True))
+        self.assertEqual(mode, RuntimeMode.LEGACY_REALTIME)
 ```
 
 - [ ] **Step 2: Run test to verify failure**
@@ -631,261 +605,132 @@ if __name__ == "__main__":
 Run:
 
 ```powershell
-.venv\Scripts\python.exe -m unittest tests.test_realtime_composition -v
+.venv\Scripts\python.exe -m unittest tests.test_runtime_modes -v
 ```
 
-Expected: fail with `ModuleNotFoundError` for `visual_aiming.core.realtime_composition`.
+Expected: fail because default still returns `LEGACY_REALTIME` and parser/args do not yet include `legacy_runtime`.
 
-- [ ] **Step 3: Add composition shell**
+- [ ] **Step 3: Add temporary legacy escape hatch**
 
-Create `src/visual_aiming/core/realtime_composition.py`:
+In `main.py`, add parser flag:
 
 ```python
-from __future__ import annotations
-
-from dataclasses import dataclass
-from typing import Protocol
-
-
-class FrameSource(Protocol):
-    def read(self):
-        ...
-
-
-class Pipeline(Protocol):
-    def process_frame(self, frame):
-        ...
-
-
-class Output(Protocol):
-    def send(self, event) -> None:
-        ...
-
-
-@dataclass
-class RealtimeComposition:
-    frame_source: FrameSource
-    pipeline: Pipeline
-    output: Output
-
-
-def run_modular_realtime_once(composition: RealtimeComposition) -> bool:
-    frame = composition.frame_source.read()
-    if frame is None:
-        return False
-    event = composition.pipeline.process_frame(frame)
-    composition.output.send(event)
-    return True
+parser.add_argument("--legacy-runtime", action="store_true", help="Temporary fallback to the old realtime runtime")
 ```
 
-- [ ] **Step 4: Wire `main.py --modular --realtime-experimental`**
-
-Add an explicit parser flag:
+In `src/visual_aiming/core/runtime_modes.py`, update `choose_runtime_mode()`:
 
 ```python
-parser.add_argument(
-    "--realtime-experimental",
-    action="store_true",
-    help="Run experimental modular realtime composition instead of legacy realtime fallback",
-)
+if getattr(args, "legacy_runtime", False):
+    return RuntimeMode.LEGACY_REALTIME
 ```
 
-In `_run_modular`, before falling back to legacy:
+Change the final default:
 
 ```python
-if mode == RuntimeMode.MODULAR_REALTIME and getattr(args, "realtime_experimental", False):
+return RuntimeMode.MODULAR_REALTIME
+```
+
+- [ ] **Step 4: Route default realtime to `run_realtime(config)`**
+
+In `main.py`, let `RuntimeMode.MODULAR_REALTIME` call `_run_modular(args, mode=mode)`.
+
+In `_run_modular`, replace legacy fallback with:
+
+```python
+if mode == RuntimeMode.MODULAR_REALTIME:
     from visual_aiming.app.realtime import run_realtime
 
-    return run_realtime(config)
+    run_realtime(config)
+    return 0
 ```
 
-Keep the fallback unchanged when `--realtime-experimental` is absent.
+Keep `RuntimeMode.LEGACY_REALTIME` using `visual_aiming.core.runtime.main()` through the `--legacy-runtime` escape hatch.
 
-- [ ] **Step 5: Run composition and route tests**
+- [ ] **Step 5: Verify default route tests**
 
 Run:
 
 ```powershell
-.venv\Scripts\python.exe -m unittest tests.test_realtime_composition tests.test_runtime_modes tests.test_modular_apps -v
+.venv\Scripts\python.exe -m unittest tests.test_runtime_modes tests.test_single_runtime_apps tests.test_modular_apps -v
 ```
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Explain task result to user**
+- [ ] **Step 6: Manual safety check**
+
+Run safe non-mouse commands first:
+
+```powershell
+.venv\Scripts\python.exe main.py --modular --video path\to\sample.mp4 --output null
+.venv\Scripts\python.exe main.py --output null
+```
+
+Expected:
+
+- Video replay processes frames without real mouse output.
+- Realtime starts with `NullOutput` unless config or CLI explicitly enables real mouse output.
+
+- [ ] **Step 7: Explain task result to user**
 
 Explain:
 
 ```text
-Task 5 完成：模块化实时路径有了显式实验入口，但默认实时路径仍然不变。这样可以开始做真实运行对照测试，同时不会破坏当前可用流程。
+Task 5 完成：默认实时入口已经切到模块化单 runtime。旧 runtime 只剩 --legacy-runtime 逃生入口，下一阶段验证通过后删除。
 ```
 
-## Task 6: Parity Checklist and Manual Validation Script
+## Task 6: Delete Legacy Runtime Path
 
 **Files:**
+- Delete: `src/visual_aiming/core/runtime.py`
+- Delete or reduce: `tests/test_runtime_pipeline.py`
+- Modify: `src/visual_aiming/core/pipeline.py`
+- Modify: `main.py`
 - Modify: `docs/runtime-convergence.md`
-- Create: `scripts/runtime_parity_check.py`
-- Create: `tests/test_runtime_parity_check.py`
 
-- [ ] **Step 1: Add manual parity checklist**
-
-Append to `docs/runtime-convergence.md`:
-
-```markdown
-## Manual Parity Checklist
-
-Run these checks before making modular realtime the default:
-
-1. `python main.py` starts legacy realtime as before.
-2. `python main.py --video-test` still opens video test and writes JSONL diagnostics.
-3. `python main.py --modular --video <file> --output null` processes replay without moving mouse.
-4. `python main.py --modular --realtime-experimental --output null` starts modular realtime without real mouse output.
-5. The same config file maps ROI, output backend, and diagnostics fields into both runtime families.
-6. Logs contain `control_contract` fields for control/mouse-output analysis.
-
-Do not switch defaults until all six checks pass on the developer machine.
-```
-
-- [ ] **Step 2: Write parity script tests**
-
-Create `tests/test_runtime_parity_check.py`:
-
-```python
-import unittest
-
-from scripts.runtime_parity_check import check_log_contract
-
-
-class RuntimeParityCheckTests(unittest.TestCase):
-    def test_log_contract_accepts_control_contract(self):
-        rows = [
-            {"seq": 1, "control_contract": {"command_dx": 0, "command_dy": 0}},
-            {"seq": 2, "control_contract": {"command_dx": 1, "command_dy": -1}},
-        ]
-
-        result = check_log_contract(rows)
-
-        self.assertEqual(result["rows"], 2)
-        self.assertEqual(result["missing_control_contract"], 0)
-
-    def test_log_contract_counts_missing_contract(self):
-        rows = [{"seq": 1}, {"seq": 2, "control_contract": {}}]
-
-        result = check_log_contract(rows)
-
-        self.assertEqual(result["rows"], 2)
-        self.assertEqual(result["missing_control_contract"], 1)
-
-
-if __name__ == "__main__":
-    unittest.main()
-```
-
-- [ ] **Step 3: Run test to verify failure**
+- [ ] **Step 1: Search legacy references**
 
 Run:
 
 ```powershell
-.venv\Scripts\python.exe -m unittest tests.test_runtime_parity_check -v
+rg "visual_aiming.core.runtime|RuntimePipeline|--legacy-runtime|legacy_main" main.py src tests docs
 ```
 
-Expected: fail because `scripts.runtime_parity_check` does not exist.
+Expected: references remain only in the old files and tests scheduled for deletion.
 
-- [ ] **Step 4: Add parity script**
+- [ ] **Step 2: Delete old runtime file**
 
-Create `scripts/runtime_parity_check.py`:
+Delete `src/visual_aiming/core/runtime.py`.
 
-```python
-from __future__ import annotations
+- [ ] **Step 3: Remove `RuntimePipeline` if no production code imports it**
 
-import argparse
-import json
-from pathlib import Path
+In `src/visual_aiming/core/pipeline.py`, delete the `RuntimePipeline` class only after `rg "RuntimePipeline" src tests` shows it is no longer used by production code.
 
+- [ ] **Step 4: Remove legacy escape hatch**
 
-def load_jsonl(path: str | Path) -> list[dict]:
-    rows = []
-    with Path(path).open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-    return rows
+In `main.py`, remove `--legacy-runtime`.
 
+In `src/visual_aiming/core/runtime_modes.py`, remove `LEGACY_REALTIME` if no tests or production code need it.
 
-def check_log_contract(rows: list[dict]) -> dict[str, int]:
-    missing = sum(1 for row in rows if "control_contract" not in row)
-    return {"rows": len(rows), "missing_control_contract": missing}
+- [ ] **Step 5: Replace old tests**
 
+Delete old-runtime tests that only validate `RuntimePipeline`.
 
-def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Check runtime convergence diagnostics contract")
-    parser.add_argument("jsonl", help="Diagnostics JSONL path")
-    args = parser.parse_args(argv)
-    result = check_log_contract(load_jsonl(args.jsonl))
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 1 if result["missing_control_contract"] else 0
+Keep tests that validate shared schemas, `ModularPipeline`, adapters, output safety, and `RuntimeRunner`.
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-- [ ] **Step 5: Run parity script tests**
+- [ ] **Step 6: Verify no legacy references**
 
 Run:
 
 ```powershell
-.venv\Scripts\python.exe -m unittest tests.test_runtime_parity_check -v
+rg "visual_aiming.core.runtime|RuntimePipeline|legacy_main|LEGACY_REALTIME" main.py src tests docs
 ```
 
-Expected: all tests pass.
+Expected: no production references. Documentation may mention the removed path only in a migration note.
 
-- [ ] **Step 6: Explain task result to user**
+- [ ] **Step 7: Run full verification**
 
-Explain:
-
-```text
-Task 6 完成：这一步给 runtime 收敛增加了手动验收清单和日志 contract 检查脚本。以后每次迁移实时路径，都可以先用这个脚本确认日志是否还能被统一分析。
-```
-
-## Task 7: Default Switch Decision Gate
-
-**Files:**
-- Modify: `docs/runtime-convergence.md`
-- Modify only after manual approval: `main.py`
-
-- [ ] **Step 1: Add decision gate**
-
-Append to `docs/runtime-convergence.md`:
-
-```markdown
-## Default Switch Gate
-
-Only switch `python main.py` from legacy realtime to modular realtime after:
-
-- Unit tests pass.
-- `--video-test` remains usable.
-- `--modular --video` replay remains usable.
-- `--modular --realtime-experimental --output null` has been manually tested.
-- Mouse output remains disabled unless explicitly enabled.
-- User confirms modular realtime behavior is at least as good as legacy realtime.
-
-Until then, legacy realtime remains the default.
-```
-
-- [ ] **Step 2: Stop and ask for user review**
-
-Do not change the default runtime in this task. Ask the user to review `docs/runtime-convergence.md` and decide whether to schedule the default switch as a later phase.
-
-Explain:
-
-```text
-Task 7 完成：默认切换条件已经写入文档，但没有切换默认入口。当前策略是先实验、再验证、最后才决定是否把 `python main.py` 改成模块化实时路径。
-```
-
-## Final Verification
-
-After all approved tasks in this plan are implemented, run:
+Run:
 
 ```powershell
 .venv\Scripts\python.exe -m unittest discover tests -v
@@ -899,22 +744,232 @@ Expected:
 - `compileall` returns no output.
 - `git diff --check` returns no whitespace errors.
 
-## Commit Guidance
+- [ ] **Step 8: Explain task result to user**
 
-Commit by phase, not every tiny step. Recommended commits:
+Explain:
+
+```text
+Task 6 完成：旧实时 runtime 已删除，程序只剩一套运行逻辑。视频测试、视频回放、实时运行都通过 RuntimeRunner + ModularPipeline，只替换输入源、输出端和调试观察层。
+```
+
+## Task 7: Repository Cleanup After Single Runtime
+
+**Files:**
+- Modify: `.gitignore`
+- Modify: `README.md`
+- Modify or archive: `docs/runtime-convergence.md`
+- Delete after audit: generated artifacts, old root scripts, obsolete docs, obsolete tests, obsolete packaging output, obsolete IDE files
+
+- [ ] **Step 1: Generate cleanup inventory**
+
+Run:
 
 ```powershell
-git add docs/runtime-convergence.md src/visual_aiming/core/runtime_modes.py tests/test_runtime_modes.py main.py
-git commit -m "明确新旧运行时路由"
+.venv\Scripts\python.exe - <<'PY'
+from pathlib import Path
+root = Path(".")
+skip = {".git", ".venv"}
+entries = []
+for path in sorted(root.iterdir(), key=lambda p: p.name.lower()):
+    if path.name in skip:
+        continue
+    if path.is_dir():
+        count = sum(1 for p in path.rglob("*") if p.is_file())
+        entries.append((path.name + "/", "dir", count))
+    else:
+        entries.append((path.name, "file", 1))
+for name, kind, count in entries:
+    print(f"{kind:4} {count:5} {name}")
+PY
+```
 
-git add src/visual_aiming/core/diagnostic_events.py src/visual_aiming/core/modular_pipeline.py src/visual_aiming/actions/mouse_control.py tests/test_runtime_convergence_contracts.py
-git commit -m "统一运行时诊断契约"
+Expected: a root-level inventory that includes generated folders such as `build/`, `dist/`, `logs/`, and root scripts such as `mouse.py` or `test.py` if they still exist.
 
-git add src/visual_aiming/config/loader.py src/visual_aiming/config/__init__.py tests/test_modular_schemas_config.py
-git commit -m "集中运行时配置映射"
+- [ ] **Step 2: Audit references before deletion**
 
-git add src/visual_aiming/core/realtime_composition.py scripts/runtime_parity_check.py tests/test_realtime_composition.py tests/test_runtime_parity_check.py docs/runtime-convergence.md main.py
-git commit -m "加入模块化实时实验入口"
+Run:
+
+```powershell
+rg "mouse.py|test.py|RuntimePipeline|visual_aiming.core.runtime|build/|dist/|logs/" README.md docs src tests scripts packaging main.py
+```
+
+Expected:
+
+- `RuntimePipeline` and `visual_aiming.core.runtime` have no production references after Task 6.
+- `mouse.py` and `test.py` are either unreferenced or documented as obsolete.
+- `build/`, `dist/`, and `logs/` are not required as tracked runtime inputs.
+
+- [ ] **Step 3: Remove generated artifacts from workspace**
+
+Delete generated folders if they exist:
+
+```powershell
+Remove-Item -Recurse -Force -LiteralPath build, dist, logs, __pycache__ -ErrorAction SilentlyContinue
+Get-ChildItem -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
+Get-ChildItem -Recurse -Include *.pyc,*.pyo | Remove-Item -Force
+```
+
+Expected:
+
+- Generated build output, runtime logs, and Python cache files are gone from the working tree.
+- `.gitignore` still contains:
+
+```text
+__pycache__/
+*.py[cod]
+/logs/
+build/
+dist/
+.idea/
+.vscode/
+```
+
+- [ ] **Step 4: Delete obsolete root scripts after reference audit**
+
+If Step 2 shows no valid references, delete:
+
+```powershell
+Remove-Item -LiteralPath mouse.py, test.py -ErrorAction SilentlyContinue
+```
+
+If either file still has a valid purpose, move its useful code into `scripts/` or `tests/` first, then delete the root file.
+
+Expected:
+
+- Root directory keeps `main.py` as the only executable entry script.
+- One-off experimental files no longer live at repository root.
+
+- [ ] **Step 5: Prune obsolete docs and plans**
+
+Review `docs/superpowers/plans/` and `docs/superpowers/specs/`.
+
+Keep:
+
+- the current single-runtime plan
+- the mouse angular-control plan
+- design/spec files that describe still-valid architecture
+
+Archive or delete documents that only describe removed legacy runtime behavior. If a document has useful historical context, move it under:
+
+```text
+docs/archive/
+```
+
+Expected:
+
+- Active docs describe the current single-runtime architecture.
+- Historical docs are not mixed with active implementation plans.
+
+- [ ] **Step 6: Prune obsolete tests**
+
+Run:
+
+```powershell
+rg "RuntimePipeline|visual_aiming.core.runtime|MouseController realtime loop|legacy runtime" tests
+```
+
+Delete tests that only validate deleted runtime internals.
+
+Keep tests that validate:
+
+- `RuntimeRunner`
+- `ModularPipeline`
+- frame-source adapters
+- output adapters
+- config schema
+- video-test diagnostics
+- mouse sender/output safety
+
+Expected: tests exercise the single runtime architecture rather than deleted legacy internals.
+
+- [ ] **Step 7: Update README root layout**
+
+Update `README.md` with the post-cleanup layout:
+
+```markdown
+## Project Layout
+
+- `main.py` - CLI entrypoint.
+- `src/visual_aiming/core/runtime_runner.py` - single runtime loop.
+- `src/visual_aiming/core/pipeline.py` - modular aiming pipeline.
+- `src/visual_aiming/adapters/frame_sources/` - screen and video input sources.
+- `src/visual_aiming/adapters/outputs/` - null, log, and mouse outputs.
+- `src/visual_aiming/app/` - realtime, replay, video-test compositions.
+- `scripts/` - diagnostic and calibration utilities.
+- `tests/` - unit tests for the single runtime architecture.
+```
+
+Expected: README no longer describes removed legacy runtime files as active architecture.
+
+- [ ] **Step 8: Verify cleanup**
+
+Run:
+
+```powershell
+git status --short
+.venv\Scripts\python.exe -m unittest discover tests -v
+.venv\Scripts\python.exe -m compileall -q src tests scripts main.py
+git diff --check
+rg "visual_aiming.core.runtime|RuntimePipeline|legacy_main" main.py src tests
+```
+
+Expected:
+
+- `git status --short` shows intended deletions/updates only.
+- Test suite passes.
+- Compile check passes.
+- Whitespace check passes.
+- Legacy runtime symbols are absent from production and test code.
+
+- [ ] **Step 9: Explain task result to user**
+
+Explain:
+
+```text
+Task 7 完成：仓库完成统一 runtime 后清理。生成物、旧根目录脚本、过时文档、过时测试和打包输出已经删除或归档；README 描述现在的单运行流程结构。保留模型、用户配置和仍有引用的有效测试资产。
+```
+
+## Commit Guidance
+
+Commit by phase:
+
+```powershell
+git add src/visual_aiming/core/runtime_runner.py tests/test_runtime_runner.py
+git commit -m "新增统一运行循环"
+
+git add src/visual_aiming/app/replay.py src/visual_aiming/app/video_test.py tests/test_modular_apps.py tests/test_video_test_runtime_runner.py
+git commit -m "让视频路径复用统一运行循环"
+
+git add src/visual_aiming/app/realtime.py tests/test_single_runtime_apps.py main.py src/visual_aiming/core/runtime_modes.py
+git commit -m "让实时路径复用统一运行循环"
+
+git add main.py src/visual_aiming/core/runtime_modes.py docs/runtime-convergence.md tests/test_runtime_modes.py
+git commit -m "切换默认入口到统一运行逻辑"
+
+git add -A src/visual_aiming/core tests docs main.py
+git commit -m "删除旧实时运行路径"
+
+git add -A .gitignore README.md docs tests src scripts packaging main.py mouse.py test.py
+git commit -m "清理统一运行逻辑后的冗余文件"
 ```
 
 Do not include `config.json` unless the user explicitly requests it.
+
+## Final Verification
+
+Before reporting the full migration complete, run:
+
+```powershell
+.venv\Scripts\python.exe -m unittest discover tests -v
+.venv\Scripts\python.exe -m compileall -q src tests scripts main.py
+git diff --check
+rg "visual_aiming.core.runtime|RuntimePipeline|legacy_main" main.py src tests
+```
+
+Expected:
+
+- Test suite passes.
+- Compile check passes.
+- Whitespace check passes.
+- Legacy runtime symbols are absent from production code.
+- Root directory contains only active project files, with generated output ignored or removed.

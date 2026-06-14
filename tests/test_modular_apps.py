@@ -72,6 +72,36 @@ class ModularAppsTest(unittest.TestCase):
         self.assertEqual(results[0].sequence, 0)
         self.assertEqual(results[1].sequence, 1)
 
+    def test_replay_runner_uses_runtime_runner(self):
+        from visual_aiming.app.replay import run_replay
+
+        class Source:
+            def __init__(self):
+                self.frames = ["one", "two"]
+                self.closed = False
+
+            def read(self):
+                return self.frames.pop(0) if self.frames else None
+
+            def close(self):
+                self.closed = True
+
+        class Pipeline:
+            def __init__(self):
+                self.frames = []
+
+            def tick(self, frame, now=None):
+                self.frames.append(frame)
+                return {"frame": frame}
+
+        source = Source()
+        pipeline = Pipeline()
+        results = run_replay(ModularConfig(), source, pipeline=pipeline)
+
+        self.assertEqual(results, [{"frame": "one"}, {"frame": "two"}])
+        self.assertEqual(pipeline.frames, ["one", "two"])
+        self.assertTrue(source.closed)
+
     def test_video_test_wait_subtracts_previous_frame_work(self):
         from visual_aiming.app.timing import compute_active_wait_ms
 

@@ -24,33 +24,42 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
-    if args.analyze_log:
+    from visual_aiming.core.runtime_modes import RuntimeMode, choose_runtime_mode
+
+    mode = choose_runtime_mode(args)
+    if mode == RuntimeMode.ANALYZE_LOG:
         from visual_aiming.app.log_analyzer import analyze_jsonl, format_report
+
         print(format_report(analyze_jsonl(args.analyze_log)))
         return 0
-    if args.video_test:
+    if mode == RuntimeMode.VIDEO_TEST:
         from visual_aiming.app.video_test import run_video_test
+
         return run_video_test()
-    if args.modular:
-        return _run_modular(args)
+    if mode in (RuntimeMode.MODULAR_REPLAY, RuntimeMode.MODULAR_REALTIME):
+        return _run_modular(args, mode=mode)
     from visual_aiming.core.runtime import main as legacy_main
+
     return legacy_main()
 
 
-def _run_modular(args):
+def _run_modular(args, mode=None):
     from visual_aiming.config.loader import load_modular_config
+    from visual_aiming.core.runtime_modes import RuntimeMode
 
     config = load_modular_config("config.json")
     config.output.backend = args.output
     config.output.enable_real_mouse = bool(args.real_mouse)
     config.output.mouse_method = args.mouse_method
     config.diagnostics.jsonl_path = args.diagnostics
-    if args.video:
+    if mode == RuntimeMode.MODULAR_REPLAY:
         from visual_aiming.app.replay import run_video_file
+
         run_video_file(config, args.video)
         return 0
     from visual_aiming.core.runtime import main as legacy_main
-    print("[modular] Realtime modular composition is available, but legacy realtime loop remains default until screen activation is migrated.")
+
+    print("[modular] Realtime modular composition is not default yet; falling back to legacy realtime loop.")
     return legacy_main()
 
 

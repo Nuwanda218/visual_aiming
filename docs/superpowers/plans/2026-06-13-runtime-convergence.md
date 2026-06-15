@@ -765,7 +765,7 @@ Task 6 完成：旧实时 runtime 已删除，程序只剩一套运行逻辑。�
 - Modify or archive: `docs/runtime-convergence.md`
 - Delete after audit: generated artifacts, old root scripts, obsolete docs, obsolete tests, obsolete packaging output, obsolete IDE files
 
-- [ ] **Step 1: Generate cleanup inventory**
+- [x] **Step 1: Generate cleanup inventory**
 
 Run:
 
@@ -790,7 +790,7 @@ PY
 
 Expected: a root-level inventory that includes generated folders such as `build/`, `dist/`, `logs/`, and root scripts such as `mouse.py` or `test.py` if they still exist.
 
-- [ ] **Step 2: Audit references before deletion**
+- [x] **Step 2: Audit references before deletion**
 
 Run:
 
@@ -804,7 +804,7 @@ Expected:
 - `mouse.py` and `test.py` are either unreferenced or documented as obsolete.
 - `build/`, `dist/`, and `logs/` are not required as tracked runtime inputs.
 
-- [ ] **Step 3: Remove generated artifacts from workspace**
+- [x] **Step 3: Remove generated artifacts from workspace**
 
 Delete generated folders if they exist:
 
@@ -829,7 +829,7 @@ dist/
 .vscode/
 ```
 
-- [ ] **Step 4: Delete obsolete root scripts after reference audit**
+- [x] **Step 4: Delete obsolete root scripts after reference audit**
 
 If Step 2 shows no valid references, delete:
 
@@ -844,7 +844,7 @@ Expected:
 - Root directory keeps `main.py` as the only executable entry script.
 - One-off experimental files no longer live at repository root.
 
-- [ ] **Step 5: Prune obsolete docs and plans**
+- [x] **Step 5: Prune obsolete docs and plans**
 
 Review `docs/superpowers/plans/` and `docs/superpowers/specs/`.
 
@@ -865,7 +865,7 @@ Expected:
 - Active docs describe the current single-runtime architecture.
 - Historical docs are not mixed with active implementation plans.
 
-- [ ] **Step 6: Prune obsolete tests**
+- [x] **Step 6: Prune obsolete tests**
 
 Run:
 
@@ -887,7 +887,7 @@ Keep tests that validate:
 
 Expected: tests exercise the single runtime architecture rather than deleted legacy internals.
 
-- [ ] **Step 7: Update README root layout**
+- [x] **Step 7: Update README root layout**
 
 Update `README.md` with the post-cleanup layout:
 
@@ -906,7 +906,7 @@ Update `README.md` with the post-cleanup layout:
 
 Expected: README no longer describes removed legacy runtime files as active architecture.
 
-- [ ] **Step 8: Verify cleanup**
+- [x] **Step 8: Verify cleanup**
 
 Run:
 
@@ -926,7 +926,7 @@ Expected:
 - Whitespace check passes.
 - Legacy runtime symbols are absent from production and test code.
 
-- [ ] **Step 9: Explain task result to user**
+- [x] **Step 9: Explain task result to user**
 
 Explain:
 

@@ -46,6 +46,7 @@ class ConfigWindowSectionsTest(unittest.TestCase):
         output_keys = {item.key for item in dict(sections)["输出测试"]}
 
         self.assertIn("mouse_method", output_keys)
+        self.assertIn("mouse_diagnostics_enabled", output_keys)
         self.assertIn("mouse_absolute_mode_enabled", output_keys)
 
     def test_advanced_tuning_keys_are_still_available(self):

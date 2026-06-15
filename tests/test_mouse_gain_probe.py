@@ -54,6 +54,46 @@ class MouseGainProbeTests(unittest.TestCase):
         self.assertTrue(callable(probe.select_sender("set_cursor")))
         self.assertTrue(callable(probe.select_sender("sendinput")))
 
+    def test_parse_args_enables_elevation_by_default(self):
+        probe = load_probe_module()
+
+        args = probe.parse_args(["--backend", "sendinput"])
+
+        self.assertTrue(args.elevate)
+
+    def test_parse_args_can_disable_elevation(self):
+        probe = load_probe_module()
+
+        args = probe.parse_args(["--no-elevate"])
+
+        self.assertFalse(args.elevate)
+
+    def test_ensure_elevated_relaunches_when_not_admin(self):
+        probe = load_probe_module()
+        calls = []
+
+        result = probe.ensure_elevated(
+            ["scripts/mouse_gain_probe.py", "--backend", "sendinput"],
+            is_admin=lambda: False,
+            relaunch=lambda argv: calls.append(argv),
+        )
+
+        self.assertTrue(result)
+        self.assertEqual(calls, [["scripts/mouse_gain_probe.py", "--backend", "sendinput", "--no-elevate"]])
+
+    def test_ensure_elevated_noops_when_admin(self):
+        probe = load_probe_module()
+        calls = []
+
+        result = probe.ensure_elevated(
+            ["scripts/mouse_gain_probe.py"],
+            is_admin=lambda: True,
+            relaunch=lambda argv: calls.append(argv),
+        )
+
+        self.assertFalse(result)
+        self.assertEqual(calls, [])
+
 
 if __name__ == "__main__":
     unittest.main()

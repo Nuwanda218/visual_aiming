@@ -98,4 +98,14 @@ Before judging algorithm control quality in-game, compare the two Windows sender
 
 Use `set_cursor` for the conservative `GetCursorPos + SetCursorPos` path. Use `sendinput` for Win32 relative mouse movement. If both move the desktop cursor but only one works in-game, the difference is likely in how the game reads mouse input.
 
-The probe prints each send step before calling the sender and prints `done` at the end. If `sendinput` returns but the observed desktop delta differs from the requested delta, Windows pointer speed/acceleration may be scaling relative input. Use larger deltas such as `--dx 80` before judging that movement failed.
+The probe requests administrator privileges by default. Add `--no-elevate` only when you explicitly want to stay in the current non-admin shell. The probe prints each send step before calling the sender and prints `done` at the end. If `sendinput` returns but the observed desktop delta differs from the requested delta, Windows pointer speed/acceleration may be scaling relative input. Use larger deltas such as `--dx 80` before judging that movement failed.
+
+For live runtime checks, enable `输出诊断日志` in the config window. The runtime prints `mouse_diagnostics` lines with:
+
+- `sender`: active mouse sender, such as `send_relative_move_sendinput`.
+- `sent`: number of non-zero moves sent by the controller.
+- `zero`: number of controller ticks that produced zero movement.
+- `last`: last sent `(dx, dy)`.
+- `blocked`: reasons such as `inactive`, `missing_crosshair`, or `reset`.
+
+If `sent` keeps increasing but in-game aim does not move, focus on game input mode and sender method. If `sent` stays flat while detections exist, focus on activation state, crosshair availability, deadzone, or controller output.

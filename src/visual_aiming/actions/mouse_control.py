@@ -21,6 +21,8 @@ class MouseController:
         self._active = False
         self._measurement_seq = 0
         self._servo_thread: Optional[threading.Thread] = None
+        self._diagnostics_lock = threading.Lock()
+        self._diagnostics = self._new_diagnostics()
 
         self.error_x = 0.0
         self.error_y = 0.0
@@ -49,6 +51,7 @@ class MouseController:
                 self._target_pos = None
                 self._crosshair_pos = None
                 self._active = False
+        self._record_blocked("reset")
         self._reset_controller_state()
 
     def stop(self):
@@ -88,15 +91,19 @@ class MouseController:
         active: bool = True,
     ):
         if not active:
+            self._record_blocked("inactive")
             self.reset()
             return
 
         if self._absolute_mode_enabled():
             if target_pos is not None and has_measurement:
                 self._move_absolute(target_pos)
+            else:
+                self._record_blocked("absolute_missing_target")
             return
 
         if crosshair_pos is None:
+            self._record_blocked("missing_crosshair")
             self.reset()
             return
 
@@ -131,6 +138,7 @@ class MouseController:
                 if was_active:
                     self._reset_controller_state()
                     was_active = False
+                self._record_blocked("inactive" if not active else "missing_crosshair")
                 self._sleep_to_next_tick(loop_start, interval)
                 continue
 
@@ -199,9 +207,12 @@ class MouseController:
 
         send_x, send_y = self._compute_move(dt)
         if send_x == 0 and send_y == 0:
+            self._record_zero_output()
             return
 
         self.move_sender(send_x, send_y)
+        self._record_sent(send_x, send_y, dt)
+        self._print_diagnostics()
 
         self._apply_output_feedback(send_x, send_y, dt)
 
@@ -212,6 +223,72 @@ class MouseController:
                 "fps_mouse_move",
                 f"FPS控制 error={error_mag:.1f} delta={command_mag:.1f}",
             )
+
+    def diagnostics_snapshot(self) -> dict:
+        with self._diagnostics_lock:
+            blocked = dict(self._diagnostics["blocked"])
+            return {
+                "sender": getattr(self.move_sender, "__name__", type(self.move_sender).__name__),
+                "sent_moves": self._diagnostics["sent_moves"],
+                "zero_outputs": self._diagnostics["zero_outputs"],
+                "blocked": blocked,
+                "last_command": self._diagnostics["last_command"],
+                "last_command_magnitude": self._diagnostics["last_command_magnitude"],
+                "last_dt": self._diagnostics["last_dt"],
+                "last_sent_at": self._diagnostics["last_sent_at"],
+            }
+
+    def _new_diagnostics(self) -> dict:
+        return {
+            "sent_moves": 0,
+            "zero_outputs": 0,
+            "blocked": {},
+            "last_command": (0, 0),
+            "last_command_magnitude": 0.0,
+            "last_dt": 0.0,
+            "last_sent_at": None,
+        }
+
+    def _record_blocked(self, reason: str):
+        if not self._diagnostics_enabled():
+            return
+        with self._diagnostics_lock:
+            blocked = self._diagnostics["blocked"]
+            blocked[reason] = blocked.get(reason, 0) + 1
+
+    def _record_zero_output(self):
+        if not self._diagnostics_enabled():
+            return
+        with self._diagnostics_lock:
+            self._diagnostics["zero_outputs"] += 1
+
+    def _record_sent(self, send_x: int, send_y: int, dt: float):
+        if not self._diagnostics_enabled():
+            return
+        with self._diagnostics_lock:
+            self._diagnostics["sent_moves"] += 1
+            self._diagnostics["last_command"] = (send_x, send_y)
+            self._diagnostics["last_command_magnitude"] = round(math.hypot(send_x, send_y), 2)
+            self._diagnostics["last_dt"] = round(float(dt), 6)
+            self._diagnostics["last_sent_at"] = time.time()
+
+    def _print_diagnostics(self):
+        if not self._diagnostics_enabled() or self.printer is None:
+            return
+        snapshot = self.diagnostics_snapshot()
+        blocked = ",".join(f"{key}={value}" for key, value in sorted(snapshot["blocked"].items())) or "none"
+        last_x, last_y = snapshot["last_command"]
+        self.printer.print(
+            "mouse_diagnostics",
+            (
+                f"sender={snapshot['sender']} sent={snapshot['sent_moves']} zero={snapshot['zero_outputs']} "
+                f"last=({last_x},{last_y}) mag={snapshot['last_command_magnitude']:.1f} "
+                f"dt={snapshot['last_dt']:.4f} blocked={blocked}"
+            ),
+        )
+
+    def _diagnostics_enabled(self) -> bool:
+        return bool(getattr(self.config, "mouse_diagnostics_enabled", False))
 
     def _accept_measurement(self, measurement: Tuple[float, float]):
         mx, my = measurement

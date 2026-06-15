@@ -28,6 +28,7 @@ class Config:
     servo_output_to_error_gain = 0.0
     servo_output_to_velocity_gain = 0.0
     mouse_absolute_mode_enabled = False
+    mouse_diagnostics_enabled = True
 
 
 class MouseControllerTest(unittest.TestCase):
@@ -41,6 +42,45 @@ class MouseControllerTest(unittest.TestCase):
         controller.move_towards(target_pos=(150, 100), crosshair_pos=(100, 100), has_measurement=True, active=True)
 
         self.assertEqual(sent, [(21, 0)])
+
+    def test_diagnostics_counts_sends_and_blocked_reasons(self):
+        from visual_aiming.actions.mouse_control import MouseController
+
+        sent = []
+        controller = MouseController(Config(), move_sender=lambda dx, dy: sent.append((dx, dy)))
+        controller.printer = None
+
+        controller.move_towards(target_pos=(150, 100), crosshair_pos=(100, 100), has_measurement=True, active=True)
+        controller.move_towards(target_pos=(100, 100), crosshair_pos=(100, 100), has_measurement=True, active=True)
+        controller.move_towards(target_pos=(150, 100), crosshair_pos=None, has_measurement=True, active=True)
+        controller.move_towards(target_pos=(150, 100), crosshair_pos=(100, 100), has_measurement=True, active=False)
+
+        diagnostics = controller.diagnostics_snapshot()
+
+        self.assertEqual(diagnostics["sent_moves"], 1)
+        self.assertEqual(diagnostics["zero_outputs"], 1)
+        self.assertEqual(diagnostics["blocked"]["missing_crosshair"], 1)
+        self.assertEqual(diagnostics["blocked"]["inactive"], 1)
+        self.assertGreater(diagnostics["last_command_magnitude"], 0.0)
+
+    def test_diagnostics_prints_summary_after_send(self):
+        from visual_aiming.actions.mouse_control import MouseController
+
+        class FakePrinter:
+            def __init__(self):
+                self.calls = []
+
+            def print(self, key, message):
+                self.calls.append((key, message))
+
+        fake_printer = FakePrinter()
+        controller = MouseController(Config(), move_sender=lambda _dx, _dy: None)
+        controller.printer = fake_printer
+
+        controller.move_towards(target_pos=(150, 100), crosshair_pos=(100, 100), has_measurement=True, active=True)
+
+        self.assertTrue(any(key == "mouse_diagnostics" for key, _message in fake_printer.calls))
+        self.assertTrue(any("sent=1" in message and "last=(21,0)" in message for _key, message in fake_printer.calls))
 
 
 if __name__ == "__main__":

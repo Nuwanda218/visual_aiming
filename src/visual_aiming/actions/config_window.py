@@ -288,6 +288,7 @@ class ConfigWindow:
                 "输出测试",
                 [
                     ChoiceSpec("mouse_method", "鼠标输出方式", ("set_cursor", "sendinput"), "set_cursor 用系统光标定位；sendinput 用 Win32 相对鼠标输入，适合对比游戏内响应。"),
+                    BoolSpec("mouse_diagnostics_enabled", "输出诊断日志", "定期打印鼠标 sender、发送次数、零输出和拦截原因，用于判断控制链路是否持续输出。"),
                     BoolSpec("mouse_absolute_mode_enabled", "绝对移动测试", "直接把系统鼠标移动到瞄准点。只用于验证瞄点坐标，不适合多数 Raw Input 游戏视角。"),
                     ParamSpec("mouse_absolute_smooth_factor", "绝对移动平滑", 0.05, 1.0, 0.01, "绝对移动每次接近瞄准点的比例。1 表示直接跳到瞄准点。"),
                     ParamSpec("mouse_absolute_max_step", "绝对移动步长", 0, 500, 5, "绝对移动单次最大像素。0 表示不限制，直接按平滑比例移动。"),

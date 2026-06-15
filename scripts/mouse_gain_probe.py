@@ -3,6 +3,7 @@
 
 import argparse
 import ctypes
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -34,6 +35,7 @@ class ProbeArgs:
     interval: float = 0.25
     backend: str = "set_cursor"
     verify_cursor: bool = True
+    elevate: bool = True
 
 
 def build_move_sequence(dx: int, dy: int, count: int) -> List[Move]:
@@ -51,6 +53,46 @@ def select_sender(backend: str) -> Sender:
     if normalized in {"set_cursor", "setcursor", "cursor", "sendinput", "send_input"}:
         return create_mouse_sender(normalized)
     raise ValueError(f"unsupported mouse backend: {backend}")
+
+
+def is_running_as_admin() -> bool:
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def relaunch_as_admin(argv: List[str]) -> None:
+    executable = sys.executable
+    script = str((ROOT / argv[0]).resolve()) if argv else str(Path(__file__).resolve())
+    rest = argv[1:] if argv else []
+    parameters = " ".join([_quote_arg(script), *(_quote_arg(item) for item in rest)])
+    result = ctypes.windll.shell32.ShellExecuteW(None, "runas", executable, parameters, str(ROOT), 1)
+    if int(result) <= 32:
+        raise RuntimeError(f"failed to request administrator privileges: ShellExecuteW={result}")
+
+
+def ensure_elevated(
+    argv: List[str],
+    *,
+    is_admin: Callable[[], bool] = is_running_as_admin,
+    relaunch: Callable[[List[str]], None] = relaunch_as_admin,
+) -> bool:
+    if is_admin():
+        return False
+    relaunch_args = list(argv)
+    if "--no-elevate" not in relaunch_args:
+        relaunch_args.append("--no-elevate")
+    relaunch(relaunch_args)
+    return True
+
+
+def _quote_arg(value: str) -> str:
+    if not value:
+        return '""'
+    if any(ch.isspace() or ch == '"' for ch in value):
+        return '"' + value.replace('"', '\\"') + '"'
+    return value
 
 
 def run_probe(
@@ -94,6 +136,7 @@ def parse_args(argv: Iterable[str] | None = None) -> ProbeArgs:
     parser.add_argument("--interval", type=float, default=0.25)
     parser.add_argument("--backend", default="set_cursor", choices=["set_cursor", "sendinput", "mouse_event"])
     parser.add_argument("--no-verify", action="store_true")
+    parser.add_argument("--no-elevate", action="store_true", help="Do not relaunch this probe as administrator")
     ns = parser.parse_args(argv)
     return ProbeArgs(
         dx=ns.dx,
@@ -103,11 +146,16 @@ def parse_args(argv: Iterable[str] | None = None) -> ProbeArgs:
         interval=ns.interval,
         backend=ns.backend,
         verify_cursor=not ns.no_verify,
+        elevate=not ns.no_elevate,
     )
 
 
 def main(argv: Iterable[str] | None = None) -> None:
-    args = parse_args(argv)
+    raw_argv = list(argv) if argv is not None else sys.argv[1:]
+    args = parse_args(raw_argv)
+    if args.elevate and ensure_elevated([os.fspath(Path(__file__).relative_to(ROOT)), *raw_argv]):
+        print("administrator relaunch requested; exiting current process", flush=True)
+        return
     sender = select_sender(args.backend)
     run_probe(args, sender=sender, verify_cursor=args.verify_cursor, printer=lambda message: print(message, flush=True))
 

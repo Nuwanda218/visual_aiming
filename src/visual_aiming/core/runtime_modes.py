@@ -16,8 +16,10 @@ def choose_runtime_mode(args) -> RuntimeMode:
         return RuntimeMode.ANALYZE_LOG
     if getattr(args, "video_test", False):
         return RuntimeMode.VIDEO_TEST
+    if getattr(args, "legacy_runtime", False):
+        return RuntimeMode.LEGACY_REALTIME
     if getattr(args, "modular", False) and getattr(args, "video", ""):
         return RuntimeMode.MODULAR_REPLAY
     if getattr(args, "modular", False):
         return RuntimeMode.MODULAR_REALTIME
-    return RuntimeMode.LEGACY_REALTIME
+    return RuntimeMode.MODULAR_REALTIME

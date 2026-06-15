@@ -582,7 +582,7 @@ Task 4 完成：实时运行也有了同一套 RuntimeRunner 入口。到这里�
 - Modify: `tests/test_runtime_modes.py`
 - Modify: `tests/test_single_runtime_apps.py`
 
-- [ ] **Step 1: Add route expectation test**
+- [x] **Step 1: Add route expectation test**
 
 Update `tests/test_runtime_modes.py` so default mode expectation becomes modular realtime:
 
@@ -600,7 +600,7 @@ Keep a separate escape hatch test:
         self.assertEqual(mode, RuntimeMode.LEGACY_REALTIME)
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -610,7 +610,7 @@ Run:
 
 Expected: fail because default still returns `LEGACY_REALTIME` and parser/args do not yet include `legacy_runtime`.
 
-- [ ] **Step 3: Add temporary legacy escape hatch**
+- [x] **Step 3: Add temporary legacy escape hatch**
 
 In `main.py`, add parser flag:
 
@@ -631,7 +631,7 @@ Change the final default:
 return RuntimeMode.MODULAR_REALTIME
 ```
 
-- [ ] **Step 4: Route default realtime to `run_realtime(config)`**
+- [x] **Step 4: Route default realtime to `run_realtime(config)`**
 
 In `main.py`, let `RuntimeMode.MODULAR_REALTIME` call `_run_modular(args, mode=mode)`.
 
@@ -647,7 +647,7 @@ if mode == RuntimeMode.MODULAR_REALTIME:
 
 Keep `RuntimeMode.LEGACY_REALTIME` using `visual_aiming.core.runtime.main()` through the `--legacy-runtime` escape hatch.
 
-- [ ] **Step 5: Verify default route tests**
+- [x] **Step 5: Verify default route tests**
 
 Run:
 
@@ -657,7 +657,7 @@ Run:
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Manual safety check**
+- [x] **Step 6: Manual safety check**
 
 Run safe non-mouse commands first:
 
@@ -671,7 +671,7 @@ Expected:
 - Video replay processes frames without real mouse output.
 - Realtime starts with `NullOutput` unless config or CLI explicitly enables real mouse output.
 
-- [ ] **Step 7: Explain task result to user**
+- [x] **Step 7: Explain task result to user**
 
 Explain:
 

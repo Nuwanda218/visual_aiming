@@ -4,26 +4,27 @@
 
 | Command | Runtime path | Pipeline | Mouse/control path | Status |
 | --- | --- | --- | --- | --- |
-| `python main.py` | `visual_aiming.core.runtime.main()` | `RuntimePipeline` | `MouseController` | Legacy realtime default |
+| `python main.py` | `visual_aiming.app.realtime.run_realtime()` | `ModularPipeline` | Configured output backend | Default realtime path |
 | `python main.py --video-test` | `visual_aiming.app.video_test.run_video_test()` | Modular video path | Modular control/output diagnostics | Active debug path |
 | `python main.py --modular --video <file>` | `visual_aiming.app.replay.run_video_file()` | `ModularPipeline` | Configured output backend | Active replay path |
-| `python main.py --modular` | Falls back to `visual_aiming.core.runtime.main()` | `RuntimePipeline` | `MouseController` | Temporary fallback |
+| `python main.py --modular` | `visual_aiming.app.realtime.run_realtime()` | `ModularPipeline` | Configured output backend | Explicit realtime path |
+| `python main.py --legacy-runtime` | `visual_aiming.core.runtime.main()` | `RuntimePipeline` | `MouseController` | Temporary fallback |
 
 ## Problem
 
-There is no normal single-process fight between old and new runtimes. The risk is behavior drift: fixes verified in video replay may not affect live realtime, and live-only behavior may not be covered by modular tests.
+The default realtime entry now uses the same modular runtime shape as video replay and video test. The remaining risk is the temporary legacy escape hatch drifting while it exists.
 
 ## Convergence Rule
 
-Move shared behavior into small modules first. Keep realtime behavior stable until each shared contract has tests.
+Realtime, replay, and video-test code should share `RuntimeRunner` and `ModularPipeline`. Differences belong at the input source, output backend, and debug observer boundary.
 
 ## Migration Order
 
-1. Route decisions become explicit and testable.
-2. Diagnostics and control events use compatible field names.
-3. Config conversion lives in one place.
-4. Modular realtime composition exists behind an explicit flag.
-5. Manual parity testing decides when default realtime can switch.
+1. Route decisions are explicit and testable.
+2. Realtime, replay, and video-test paths use the unified runner contract.
+3. Default realtime uses `run_realtime(config)`.
+4. Delete the temporary legacy runtime path after verification.
+5. Clean generated artifacts, obsolete scripts, stale docs, and old tests after the single runtime is enforced.
 
 ## Deferred
 

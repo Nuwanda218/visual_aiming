@@ -137,38 +137,3 @@ class PipelineTickResult:
     pipeline_latency_ms: float
     latency_breakdown: LatencyBreakdown = field(default_factory=LatencyBreakdown)
     telemetry: Optional[RuntimeTelemetry] = None
-
-
-# --- Legacy schemas (used by existing runtime) ---
-
-
-@dataclass
-class VisionFrame:
-    frame: np.ndarray
-    timestamp: float
-    sequence: int
-
-
-@dataclass
-class DetectionState:
-    target: Optional[object]
-    fresh: bool
-    frame: Optional[np.ndarray] = None
-    timestamp: float = 0.0
-    sequence: int = -1
-
-
-@dataclass
-class ControlTarget:
-    target: Optional[Point]
-    crosshair: Optional[Point]
-    has_measurement: bool
-    active: bool
-
-
-@dataclass
-class PipelineResult:
-    control: ControlTarget
-    aim_point: Optional[Point]
-    debug_bbox: Optional[BBox]
-    used_tracker_prediction: bool = False

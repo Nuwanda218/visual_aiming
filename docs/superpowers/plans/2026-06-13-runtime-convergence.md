@@ -683,12 +683,17 @@ Task 5 完成：默认实时入口已经切到模块化单 runtime。旧 runtime
 
 **Files:**
 - Delete: `src/visual_aiming/core/runtime.py`
+- Delete: `src/visual_aiming/core/runtime_services.py`
+- Delete: `src/visual_aiming/core/runtime_state.py`
 - Delete or reduce: `tests/test_runtime_pipeline.py`
 - Modify: `src/visual_aiming/core/pipeline.py`
+- Modify: `src/visual_aiming/core/schemas.py`
+- Modify: `src/visual_aiming/core/runtime_modes.py`
+- Modify: `src/visual_aiming/core/__init__.py`
 - Modify: `main.py`
 - Modify: `docs/runtime-convergence.md`
 
-- [ ] **Step 1: Search legacy references**
+- [x] **Step 1: Search legacy references**
 
 Run:
 
@@ -698,27 +703,27 @@ rg "visual_aiming.core.runtime|RuntimePipeline|--legacy-runtime|legacy_main" mai
 
 Expected: references remain only in the old files and tests scheduled for deletion.
 
-- [ ] **Step 2: Delete old runtime file**
+- [x] **Step 2: Delete old runtime file**
 
 Delete `src/visual_aiming/core/runtime.py`.
 
-- [ ] **Step 3: Remove `RuntimePipeline` if no production code imports it**
+- [x] **Step 3: Remove `RuntimePipeline` if no production code imports it**
 
 In `src/visual_aiming/core/pipeline.py`, delete the `RuntimePipeline` class only after `rg "RuntimePipeline" src tests` shows it is no longer used by production code.
 
-- [ ] **Step 4: Remove legacy escape hatch**
+- [x] **Step 4: Remove legacy escape hatch**
 
 In `main.py`, remove `--legacy-runtime`.
 
 In `src/visual_aiming/core/runtime_modes.py`, remove `LEGACY_REALTIME` if no tests or production code need it.
 
-- [ ] **Step 5: Replace old tests**
+- [x] **Step 5: Replace old tests**
 
 Delete old-runtime tests that only validate `RuntimePipeline`.
 
 Keep tests that validate shared schemas, `ModularPipeline`, adapters, output safety, and `RuntimeRunner`.
 
-- [ ] **Step 6: Verify no legacy references**
+- [x] **Step 6: Verify no legacy references**
 
 Run:
 
@@ -728,7 +733,7 @@ rg "visual_aiming.core.runtime|RuntimePipeline|legacy_main|LEGACY_REALTIME" main
 
 Expected: no production references. Documentation may mention the removed path only in a migration note.
 
-- [ ] **Step 7: Run full verification**
+- [x] **Step 7: Run full verification**
 
 Run:
 
@@ -744,7 +749,7 @@ Expected:
 - `compileall` returns no output.
 - `git diff --check` returns no whitespace errors.
 
-- [ ] **Step 8: Explain task result to user**
+- [x] **Step 8: Explain task result to user**
 
 Explain:
 

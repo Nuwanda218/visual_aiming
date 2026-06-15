@@ -11,6 +11,16 @@ if str(SRC_ROOT) not in sys.path:
 
 
 class ArchitectureBoundaryTest(unittest.TestCase):
+    def test_legacy_runtime_path_has_been_removed(self):
+        forbidden_paths = [
+            SRC_ROOT / "visual_aiming" / "core" / "runtime.py",
+            SRC_ROOT / "visual_aiming" / "core" / "runtime_services.py",
+            SRC_ROOT / "visual_aiming" / "core" / "runtime_state.py",
+        ]
+        existing = [_display_path(path, SRC_ROOT) for path in forbidden_paths if path.exists()]
+
+        self.assertEqual(existing, [])
+
     def test_modular_app_does_not_import_legacy_runtime_modules(self):
         violations = _forbidden_imports(
             package_dir=SRC_ROOT / "visual_aiming" / "app",

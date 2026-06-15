@@ -14,7 +14,6 @@ def parse_args(argv=None):
     parser.add_argument("--modular", action="store_true", help="Run the new modular runtime")
     parser.add_argument("--video", default="", help="Run modular replay on a video file")
     parser.add_argument("--video-test", action="store_true", help="Interactive video test with GUI file picker")
-    parser.add_argument("--legacy-runtime", action="store_true", help="Temporary fallback to the old realtime runtime")
     parser.add_argument("--output", choices=["null", "log", "win_mouse"], default="null", help="Modular output backend")
     parser.add_argument("--real-mouse", action="store_true", help="Allow real mouse movement when --output win_mouse is selected")
     parser.add_argument("--mouse-method", choices=["set_cursor", "sendinput"], default="set_cursor", help="Windows mouse sender for --output win_mouse")
@@ -39,9 +38,7 @@ def main(argv=None):
         return run_video_test()
     if mode in (RuntimeMode.MODULAR_REPLAY, RuntimeMode.MODULAR_REALTIME):
         return _run_modular(args, mode=mode)
-    from visual_aiming.core.runtime import main as legacy_main
-
-    return legacy_main()
+    raise ValueError(f"Unsupported runtime mode: {mode}")
 
 
 def _run_modular(args, mode=None):

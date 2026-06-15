@@ -18,7 +18,6 @@ class RuntimeModeTests(unittest.TestCase):
             "video_test": False,
             "modular": False,
             "video": "",
-            "legacy_runtime": False,
         }
         values.update(overrides)
         return argparse.Namespace(**values)
@@ -42,10 +41,6 @@ class RuntimeModeTests(unittest.TestCase):
     def test_default_modular_realtime(self):
         mode = choose_runtime_mode(self._args())
         self.assertEqual(mode, RuntimeMode.MODULAR_REALTIME)
-
-    def test_legacy_runtime_escape_hatch(self):
-        mode = choose_runtime_mode(self._args(legacy_runtime=True))
-        self.assertEqual(mode, RuntimeMode.LEGACY_REALTIME)
 
 
 if __name__ == "__main__":

@@ -8,14 +8,11 @@ Use explicit imports from submodules to avoid circular import issues:
 
 __all__ = [
     "ModularPipeline",
-    "RuntimePipeline",
     "AimMeasurement",
     "ControlCommand",
-    "ControlTarget",
     "Detection",
     "DetectionPacket",
     "FramePacket",
-    "PipelineResult",
     "PipelineTickResult",
     "Point",
     "PredictedAim",
@@ -26,9 +23,9 @@ __all__ = [
 
 def __getattr__(name: str):
     """Lazy import to break circular dependency chains."""
-    if name in ("ModularPipeline", "RuntimePipeline"):
-        from visual_aiming.core.pipeline import ModularPipeline, RuntimePipeline
-        return ModularPipeline if name == "ModularPipeline" else RuntimePipeline
+    if name == "ModularPipeline":
+        from visual_aiming.core.pipeline import ModularPipeline
+        return ModularPipeline
     if name in __all__:
         from visual_aiming.core import schemas
         return getattr(schemas, name)

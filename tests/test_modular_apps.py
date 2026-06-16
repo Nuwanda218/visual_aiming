@@ -452,6 +452,53 @@ class ModularAppsTest(unittest.TestCase):
         self.assertEqual(report["selected_center_jump_px"]["max"], 10.0)
         self.assertIn("目标中心跳变: p50=5.00px", format_report(report))
 
+    def test_evaluate_diagnostics_returns_zero_when_thresholds_pass(self):
+        from scripts.evaluate_diagnostics import evaluate_file
+
+        rows = [
+            {"target_visible": True, "detections": [{"class_id": 0}], "predicted": {"state": "tracking"}, "command": {"mode": "relative", "dx": 2, "dy": 0}},
+            {"target_visible": True, "detections": [{"class_id": 0}], "predicted": {"state": "tracking"}, "command": {"mode": "relative", "dx": 1, "dy": 1}},
+            {"target_visible": False, "detections": [], "predicted": {"state": "lost"}, "command": {"mode": "none", "dx": 0, "dy": 0}},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            result = evaluate_file(
+                path,
+                min_visible_detection_rate=90.0,
+                max_empty_false_positive_rate=1.0,
+                max_target_switches=0,
+            )
+
+        self.assertTrue(result.passed)
+        self.assertEqual(result.failures, [])
+
+    def test_evaluate_diagnostics_reports_threshold_failures(self):
+        from scripts.evaluate_diagnostics import evaluate_file
+
+        rows = [
+            {"target_visible": True, "detections": [], "selected": {"switched": True}, "predicted": {"state": "lost"}, "command": {"mode": "none"}},
+            {"target_visible": False, "detections": [{"class_id": 0}], "selected": {"switched": True}, "predicted": {"state": "tracking"}, "command": {"mode": "relative", "dx": 3, "dy": 0}},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            result = evaluate_file(
+                path,
+                min_visible_detection_rate=90.0,
+                max_empty_false_positive_rate=1.0,
+                max_target_switches=0,
+            )
+
+        self.assertFalse(result.passed)
+        self.assertIn("visible_target_detection_rate_pct 0.0 < 90.0", result.failures)
+        self.assertIn("empty_scene_false_positive_rate_pct 100.0 > 1.0", result.failures)
+        self.assertIn("target_switches 2 > 0", result.failures)
+
 
 class ModularCliTest(unittest.TestCase):
     def test_main_parser_accepts_modular_safe_flags(self):

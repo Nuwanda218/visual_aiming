@@ -65,7 +65,7 @@ Relevant current files:
 - Modify: `tests/test_modular_apps.py`
 - Modify: `docs/debug-workflow.md`
 
-- [ ] **Step 1: Write failing tests for threshold evaluation**
+- [x] **Step 1: Write failing tests for threshold evaluation**
 
 Add this test class to `tests/test_modular_apps.py` near the log analyzer tests:
 
@@ -119,7 +119,7 @@ class DiagnosticsEvaluationCliTest(unittest.TestCase):
         self.assertIn("target_switches 2 > 0", result.failures)
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -129,7 +129,7 @@ Run:
 
 Expected: fail because `scripts.evaluate_diagnostics` does not exist.
 
-- [ ] **Step 3: Implement the evaluator**
+- [x] **Step 3: Implement the evaluator**
 
 Create `scripts/evaluate_diagnostics.py`:
 
@@ -218,7 +218,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Verify evaluator tests**
+- [x] **Step 4: Verify evaluator tests**
 
 Run:
 
@@ -228,7 +228,7 @@ Run:
 
 Expected: 2 tests pass.
 
-- [ ] **Step 5: Document usage**
+- [x] **Step 5: Document usage**
 
 Add to `docs/debug-workflow.md`:
 
@@ -242,7 +242,7 @@ Add to `docs/debug-workflow.md`:
 Use this only for annotated logs. Unannotated logs still show output rate and continuity, but cannot prove detection accuracy.
 ```
 
-- [ ] **Step 6: Verify task**
+- [x] **Step 6: Verify task**
 
 Run:
 
@@ -252,7 +252,7 @@ Run:
 git diff --check
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add scripts/evaluate_diagnostics.py tests/test_modular_apps.py docs/debug-workflow.md

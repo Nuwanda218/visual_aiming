@@ -34,7 +34,15 @@ Analyze a specific run:
 .venv\Scripts\python.exe main.py --analyze-log logs\video_test_example.jsonl
 ```
 
-## 3. Read The Report
+## 3. Evaluate a Diagnostics Run
+
+```powershell
+.venv\Scripts\python.exe scripts\evaluate_diagnostics.py logs\run.jsonl --min-visible-detection-rate 85 --max-empty-false-positive-rate 5 --max-target-switches 10
+```
+
+Use this only for annotated logs. Unannotated logs still show output rate and continuity, but cannot prove detection accuracy.
+
+## 4. Read The Report
 
 Key fields:
 
@@ -62,7 +70,7 @@ Key fields:
 - `主要瓶颈`: dominant pipeline stage from latency breakdown.
 - `结论`: machine-readable hints such as `wait_not_bottleneck` and `detector_bottleneck`.
 
-## 4. Current Baseline Interpretation
+## 5. Current Baseline Interpretation
 
 Recent manual tests showed:
 
@@ -71,7 +79,7 @@ Recent manual tests showed:
 - Selection, aim, prediction, and control stages are near-zero compared with detector latency.
 - Algorithm changes should wait until diagnostics show stable capture, detection, and playback behavior.
 
-## 5. Before Algorithm Work
+## 6. Before Algorithm Work
 
 Before changing target selection or target-lost handling, collect at least one fresh video-test run and keep these fields in the report:
 
@@ -87,7 +95,7 @@ Before changing target selection or target-lost handling, collect at least one f
 - frame work p50/p95
 - insight codes
 
-## 6. Mouse Output Probe
+## 7. Mouse Output Probe
 
 Before judging algorithm control quality in-game, compare the two Windows sender methods on the desktop:
 

@@ -272,16 +272,12 @@ class ConfigWindow:
             (
                 "常用调参",
                 [
-                    ParamSpec("capture_fps", "截图频率", 5, 160, 1, "截图线程采样频率。高了更及时，也更占资源。", int),
-                    ParamSpec("detect_fps", "普通检测频率", 1, 160, 1, "默认 YOLO 检测频率。", int),
-                    ParamSpec("firing_detect_fps", "开火检测频率", 1, 160, 1, "开火时 YOLO 检测频率。", int),
                     ParamSpec("yolo_conf_threshold", "置信度阈值", 0.05, 0.95, 0.01, "越高越保守，越低越容易检测到但误检更多。"),
                     ParamSpec("yolo_imgsz", "YOLO 输入尺寸", 256, 960, 32, "越大越准但越慢。更改后立即影响后续推理。", int),
-                    ParamSpec("servo_output_gain", "整体输出增益", 0.2, 3.0, 0.01, "整体放大/缩小鼠标移动量。大了更跟手，也更容易过冲。"),
-                    ParamSpec("servo_step_limit", "单步最大输出", 4, 120, 1, "每个控制 tick 最多发送多少像素位移。决定瞬间追赶上限。", int),
                     ParamSpec("servo_deadzone", "死区", 0, 10, 0.1, "误差小于该值时停止输出。小了更准，大了更稳。"),
                     ParamSpec("target_stickiness", "目标粘性", 0, 1, 0.01, "提高后更不容易在多个目标间跳。"),
                     ParamSpec("head_bias", "Person 头部偏置", 0.05, 0.55, 0.01, "person 框内估算头部位置的高度比例。"),
+                    BoolSpec("mouse_diagnostics_enabled", "输出诊断日志", "定期打印鼠标 sender、发送次数、零输出和拦截原因，用于判断控制链路是否持续输出。"),
                 ],
             ),
             (
@@ -297,6 +293,9 @@ class ConfigWindow:
             (
                 "高级-性能模型",
                 [
+                    ParamSpec("capture_fps", "截图频率", 5, 160, 1, "截图线程采样频率。高了更及时，也更占资源。", int),
+                    ParamSpec("detect_fps", "普通检测频率", 1, 160, 1, "默认 YOLO 检测频率。", int),
+                    ParamSpec("firing_detect_fps", "开火检测频率", 1, 160, 1, "开火时 YOLO 检测频率。", int),
                     ParamSpec("runtime_poll_fps", "主轮询频率", 30, 300, 5, "主循环喂控制目标的频率，不等于 YOLO 推理频率。", int),
                     ParamSpec("idle_detect_fps", "空闲检测频率", 1, 80, 1, "已激活但未开火时的低频检测。", int),
                     ParamSpec("servo_loop_hz", "控制线程频率", 15, 240, 5, "鼠标控制输出频率。低于识别频率时移动更平滑。"),
@@ -310,10 +309,14 @@ class ConfigWindow:
             (
                 "高级-控制行为",
                 [
+                    ParamSpec("servo_output_gain", "整体输出增益", 0.2, 3.0, 0.01, "整体放大/缩小鼠标移动量。大了更跟手，也更容易过冲。"),
+                    ParamSpec("servo_step_limit", "单步最大输出", 4, 120, 1, "每个控制 tick 最多发送多少像素位移。决定瞬间追赶上限。", int),
                     ParamSpec("aim_target_preference", "头/人倾向", 0, 1, 0.01, "1 更偏 head，0 更偏 person。"),
                     ParamSpec("aim_smooth_factor", "瞄点平滑", 0.05, 1.0, 0.01, "越低越稳但越慢，越高越跟手。"),
+                    ParamSpec("aim_deadzone", "瞄点死区", 0, 50, 1, "瞄点误差低于该值时停止输出。", int),
                     ParamSpec("target_history_radius", "历史半径", 10, 300, 5, "判定同一目标连续性的范围。", int),
                     ParamSpec("target_switch_margin", "切换门槛", 0, 0.5, 0.01, "新目标需要比旧目标好多少才切换。"),
+                    ParamSpec("sticky_switch_margin", "切换迟滞", 0, 0.5, 0.01, "越高越不容易在相近目标间切换。"),
                     ParamSpec("target_class_switch_penalty", "类别切换惩罚", 0, 0.5, 0.01, "head/person 类别切换时的额外惩罚。"),
                     ParamSpec("servo_max_speed", "最大速度", 500, 12000, 100, "控制器内部速度上限。限制远距离追赶的最高速度。"),
                     ParamSpec("servo_max_accel", "最大加速度", 1000, 60000, 500, "控制器内部加速度上限。降低后移动更柔和。"),
@@ -348,6 +351,8 @@ class ConfigWindow:
                     ParamSpec("tracker_smoothing_factor", "速度平滑", 0, 0.95, 0.01, "越高越平滑但越滞后；越低越灵敏。"),
                     ParamSpec("tracker_stop_threshold", "小速度清零", 0, 80, 1, "速度低于该值时视为静止，减少微漂移。"),
                     ParamSpec("tracker_max_prediction_ms", "最大预测保留", 0, 500, 5, "丢失新测量后最多继续预测多久。"),
+                    ParamSpec("hold_ms", "短时保持", 0, 500, 10, "检测短暂丢失时继续保持目标的时间。"),
+                    ParamSpec("hold_confidence", "保持置信度", 0, 1, 0.01, "保持状态下的置信度。"),
                     ParamSpec("tracker_reset_distance", "跳变重置距离", 20, 600, 5, "新目标跳得太远时重置预测，避免拖着旧速度。"),
                     BoolSpec("tracker_prediction_as_measurement", "预测喂给伺服", "开启后预测点会作为临时测量输入伺服。"),
                     BoolSpec("servo_direction_reset_enabled", "伺服反向重置", "目标突然反向时清掉旧速度惯性。"),

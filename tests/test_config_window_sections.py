@@ -24,22 +24,32 @@ class ConfigWindowSectionsTest(unittest.TestCase):
         common_items = dict(sections)["常用调参"]
         common_keys = {item.key for item in common_items}
 
-        self.assertLessEqual(len(common_items), 12)
+        self.assertLessEqual(len(common_items), 8)
         self.assertEqual(
             common_keys,
             {
-                "capture_fps",
-                "detect_fps",
-                "firing_detect_fps",
                 "yolo_conf_threshold",
                 "yolo_imgsz",
-                "servo_output_gain",
-                "servo_step_limit",
                 "servo_deadzone",
                 "target_stickiness",
                 "head_bias",
+                "mouse_diagnostics_enabled",
             },
         )
+
+    def test_common_tuning_keeps_only_high_value_controls(self):
+        sections = ConfigWindow(object(), "config.json")._sections()
+        common_items = dict(sections)["常用调参"]
+        keys = [item.key for item in common_items]
+
+        self.assertLessEqual(len(keys), 8)
+        self.assertIn("yolo_conf_threshold", keys)
+        self.assertIn("head_bias", keys)
+        self.assertIn("servo_deadzone", keys)
+        self.assertIn("mouse_diagnostics_enabled", keys)
+        self.assertIn("target_stickiness", keys)
+        self.assertNotIn("tracker_prediction_time", keys)
+        self.assertNotIn("target_switch_margin", keys)
 
     def test_output_test_section_exposes_mouse_method(self):
         sections = ConfigWindow(object(), "config.json")._sections()

@@ -605,7 +605,7 @@ Task 4 完成：日志可以更清楚区分 no_detections、held、lost 和 no_t
 - Modify: `tests/test_config_window_sections.py`
 - Modify: `docs/debug-workflow.md`
 
-- [ ] **Step 1: Write failing UI-section test**
+- [x] **Step 1: Write failing UI-section test**
 
 In `tests/test_config_window_sections.py`, add:
 
@@ -628,7 +628,7 @@ def test_common_tuning_keeps_only_high_value_controls(self):
 
 Use the actual section title if current code names it differently.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -638,7 +638,7 @@ Run:
 
 Expected: fail until new algorithm parameters are exposed in the common section and low-frequency advanced parameters are moved out.
 
-- [ ] **Step 3: Update section specs**
+- [x] **Step 3: Update section specs**
 
 In `src/visual_aiming/actions/config_window.py`, keep common controls focused:
 
@@ -653,7 +653,7 @@ BoolSpec("mouse_diagnostics_enabled", "输出诊断日志", "打印鼠标输出�
 
 Move rare controls into advanced sections instead of deleting their config fields.
 
-- [ ] **Step 4: Update docs**
+- [x] **Step 4: Update docs**
 
 In `docs/debug-workflow.md`, add:
 
@@ -666,7 +666,7 @@ In `docs/debug-workflow.md`, add:
 4. Adjust `控制死区` only after target selection and prediction are stable.
 ```
 
-- [ ] **Step 5: Verify task**
+- [x] **Step 5: Verify task**
 
 Run:
 
@@ -675,7 +675,7 @@ Run:
 .venv\Scripts\python.exe -m compileall -q src tests
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/visual_aiming/actions/config_window.py tests/test_config_window_sections.py docs/debug-workflow.md

@@ -34,6 +34,8 @@ class Config:
     tracker_stop_threshold: float = 10.0
     tracker_reset_distance: float = 200.0
     tracker_max_prediction_ms: float = 160.0
+    hold_ms: float = 120.0
+    hold_confidence: float = 0.35
     tracker_prediction_as_measurement: bool = True
 
     jitter_range: float = 5.0
@@ -118,6 +120,7 @@ class Config:
     target_stickiness: float = 0.28
     target_history_radius: int = 120
     target_switch_margin: float = 0.08
+    sticky_switch_margin: float = 0.08
     target_class_switch_penalty: float = 0.05
     yolo_skip_frames: int = 1
     yolo_imgsz: int = 416

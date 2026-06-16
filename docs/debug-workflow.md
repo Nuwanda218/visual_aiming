@@ -117,3 +117,10 @@ For live runtime checks, enable `输出诊断日志` in the config window. The r
 - `blocked`: reasons such as `inactive`, `missing_crosshair`, or `reset`.
 
 If `sent` keeps increasing but in-game aim does not move, focus on game input mode and sender method. If `sent` stays flat while detections exist, focus on activation state, crosshair availability, deadzone, or controller output.
+
+### Recommended tuning order
+
+1. Adjust `置信度阈值` until obvious false positives are controlled.
+2. Adjust `切换迟滞` when targets switch too often.
+3. Adjust `短时保持` when short detection gaps produce unstable commands.
+4. Adjust `死区` only after target selection and prediction are stable.

@@ -505,7 +505,7 @@ Task 3 完成：短暂丢检测不会立即变成 lost，而是进入 held 状�
 - Modify: `tests/test_modular_pipeline.py`
 - Modify: `tests/test_modular_apps.py`
 
-- [ ] **Step 1: Write failing pipeline telemetry test**
+- [x] **Step 1: Write failing pipeline telemetry test**
 
 Add to `tests/test_modular_pipeline.py`:
 
@@ -526,7 +526,7 @@ def test_lost_target_result_records_no_detection_reason(self):
 
 If `ControlCommand.reason` already reports a different valid reason, choose one stable vocabulary and update this expected set before implementation.
 
-- [ ] **Step 2: Run pipeline test to verify failure**
+- [x] **Step 2: Run pipeline test to verify failure**
 
 Run:
 
@@ -536,7 +536,7 @@ Run:
 
 Expected: fail if reason vocabulary is missing, inconsistent, or too generic.
 
-- [ ] **Step 3: Stabilize command reasons**
+- [x] **Step 3: Stabilize command reasons**
 
 In `src/visual_aiming/core/pipeline.py`, ensure invalid prediction produces a no-target command reason before output:
 
@@ -552,7 +552,7 @@ else:
 
 Keep controller-specific reasons such as `deadzone`, `subpixel`, and `limited` when they are more precise.
 
-- [ ] **Step 4: Add analyzer report coverage**
+- [x] **Step 4: Add analyzer report coverage**
 
 In `tests/test_modular_apps.py`, add a small log analyzer assertion:
 
@@ -575,7 +575,7 @@ def test_log_analyzer_reports_no_target_and_held_reasons(self):
     self.assertEqual(report["command_reason_counts"], {"held": 1, "no_target": 1})
 ```
 
-- [ ] **Step 5: Verify task**
+- [x] **Step 5: Verify task**
 
 Run:
 
@@ -583,7 +583,7 @@ Run:
 .venv\Scripts\python.exe -m unittest tests.test_modular_pipeline tests.test_modular_apps -v
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/visual_aiming/core/pipeline.py src/visual_aiming/core/schemas.py tests/test_modular_pipeline.py tests/test_modular_apps.py

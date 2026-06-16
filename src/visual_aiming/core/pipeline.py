@@ -101,8 +101,13 @@ class ModularPipeline:
         predict_ms = (time.perf_counter() - phase_started) * 1000.0
 
         phase_started = time.perf_counter()
-        error = self._error_from_prediction(predicted, frame.crosshair)
-        command = self.controller.update(error, active=mode.active, dt=self._dt)
+        if predicted.point is None:
+            command = ControlCommand(mode="none", reason="no_target")
+        else:
+            error = self._error_from_prediction(predicted, frame.crosshair)
+            command = self.controller.update(error, active=mode.active, dt=self._dt)
+            if predicted.state == "held" and command.mode == "relative":
+                command.reason = "held"
         control_ms = (time.perf_counter() - phase_started) * 1000.0
 
         latency_breakdown = LatencyBreakdown(

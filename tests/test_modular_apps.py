@@ -245,6 +245,23 @@ class ModularAppsTest(unittest.TestCase):
         self.assertIn("可见目标检出率: 50.0% (2 frames)", report)
         self.assertIn("空场景误检率: 50.0% (2 frames)", report)
 
+    def test_log_analyzer_reports_no_target_and_held_reasons(self):
+        from visual_aiming.app.log_analyzer import analyze_jsonl
+
+        rows = [
+            {"detections": [], "selected": {"reason": "no_detections"}, "predicted": {"state": "held"}, "command": {"mode": "relative", "reason": "held", "dx": 1, "dy": 0}},
+            {"detections": [], "selected": {"reason": "no_detections"}, "predicted": {"state": "lost"}, "command": {"mode": "none", "reason": "no_target", "dx": 0, "dy": 0}},
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "run.jsonl"
+            path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+            report = analyze_jsonl(path)
+
+        self.assertEqual(report["predicted_state_counts"], {"held": 1, "lost": 1})
+        self.assertEqual(report["command_reason_counts"], {"held": 1, "no_target": 1})
+
     def test_log_analyzer_reports_continuity_and_nonzero_command_metrics(self):
         from visual_aiming.app.log_analyzer import analyze_jsonl, format_report
 

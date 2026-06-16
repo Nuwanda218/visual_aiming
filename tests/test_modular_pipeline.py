@@ -108,6 +108,19 @@ class ModularPipelineTest(unittest.TestCase):
         self.assertGreater(result.command.dx, 0)
         self.assertEqual(len(output.applied), 1)
 
+    def test_lost_target_result_records_no_detection_reason(self):
+        from visual_aiming.core.pipeline import ModularPipeline
+
+        output = FakeOutput()
+        config = ModularConfig()
+        pipeline = ModularPipeline(config, FakeDetector([]), output)
+
+        result = pipeline.tick(self.make_frame(active=True), now=1.0)
+
+        self.assertEqual(result.selected.reason, "no_detections")
+        self.assertIn(result.predicted.state, {"lost", "held"})
+        self.assertEqual(result.command.reason, "no_target")
+
 
 if __name__ == "__main__":
     unittest.main()

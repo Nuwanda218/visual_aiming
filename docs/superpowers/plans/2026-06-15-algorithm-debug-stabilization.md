@@ -274,7 +274,7 @@ Task 1 完成：现在可以把视频测试日志作为评估对象，带阈值�
 - Modify: `src/visual_aiming/algorithms/target_selection.py`
 - Modify: `tests/test_modular_algorithms.py`
 
-- [ ] **Step 1: Write failing tests for stronger hysteresis**
+- [x] **Step 1: Write failing tests for stronger hysteresis**
 
 Add to `TargetSelectorTest` in `tests/test_modular_algorithms.py`:
 
@@ -320,7 +320,7 @@ def test_switches_when_new_target_is_clearly_better(self):
     self.assertTrue(selected.switched)
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -330,7 +330,7 @@ Run:
 
 Expected: at least the margin test fails because current switching behavior is not strict enough or config lacks `sticky_switch_margin`.
 
-- [ ] **Step 3: Add config field**
+- [x] **Step 3: Add config field**
 
 In `src/visual_aiming/config/schema.py`, extend `TargetSelectionConfig`:
 
@@ -340,7 +340,7 @@ sticky_switch_margin: float = 0.20
 
 If legacy flat config mapping exists for target selection, map `target_sticky_switch_margin` into this field.
 
-- [ ] **Step 4: Implement margin logic**
+- [x] **Step 4: Implement margin logic**
 
 In `src/visual_aiming/algorithms/target_selection.py`, apply the rule:
 
@@ -359,7 +359,7 @@ if self._last_bbox is not None and self.config.sticky_enabled:
 
 Adjust the comparison direction to match the current selector score contract. If lower score is better, require the new target score to be lower than sticky score by at least `margin`.
 
-- [ ] **Step 5: Verify selector behavior**
+- [x] **Step 5: Verify selector behavior**
 
 Run:
 
@@ -370,7 +370,7 @@ Run:
 
 Expected: selector tests and pipeline tests pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/visual_aiming/config/schema.py src/visual_aiming/algorithms/target_selection.py tests/test_modular_algorithms.py

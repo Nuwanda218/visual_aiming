@@ -104,6 +104,7 @@ class ModularConfigTest(unittest.TestCase):
             "yolo_head_class_id": 2,
             "yolo_person_class_id": 3,
             "aim_target_preference": 0.75,
+            "target_switch_margin": 0.25,
             "head_bias": 0.2,
             "tracker_prediction_time": 0.05,
             "servo_deadzone": 3.0,
@@ -119,6 +120,8 @@ class ModularConfigTest(unittest.TestCase):
         self.assertEqual(config.target_selection.head_class_id, 2)
         self.assertEqual(config.target_selection.person_class_id, 3)
         self.assertEqual(config.target_selection.target_preference, 0.75)
+        self.assertEqual(config.target_selection.switch_margin, 0.25)
+        self.assertEqual(config.target_selection.sticky_switch_margin, 0.25)
         self.assertEqual(config.aim.head_bias, 0.2)
         self.assertEqual(config.prediction.lead_time, 0.05)
         self.assertEqual(config.control.deadzone, 3.0)

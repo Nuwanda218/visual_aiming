@@ -37,14 +37,16 @@ class TargetSelector:
         sticky = self._sticky_candidate(scored)
         chosen = best
         chosen_parts = best_parts
-        if sticky is not None:
+        held_sticky = False
+        if sticky is not None and self.config.sticky_enabled:
             sticky_parts, sticky_detection = sticky
-            if sticky_detection is not best and best_parts[0] + self.config.switch_margin >= sticky_parts[0]:
+            margin = max(0.0, float(getattr(self.config, "sticky_switch_margin", self.config.switch_margin)))
+            if sticky_detection is not best and best_parts[0] + margin >= sticky_parts[0]:
                 chosen = sticky_detection
                 chosen_parts = sticky_parts
+            held_sticky = chosen is sticky_detection
 
-        radius_sq = max(1, self.config.history_radius) ** 2
-        switched = self.previous is not None and self._distance_sq(chosen, self.previous) > radius_sq
+        switched = self.previous is not None and not held_sticky and chosen is not self.previous
         self.previous = chosen
         return SelectedTarget(
             detection=chosen,

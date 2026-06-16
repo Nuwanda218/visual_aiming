@@ -39,8 +39,10 @@ class TargetSelectionConfig:
     head_class_id: int = 0
     person_class_id: int = 1
     target_preference: float = 0.85
+    sticky_enabled: bool = True
     stickiness: float = 0.28
     history_radius: int = 120
+    sticky_switch_margin: float = 0.08
     switch_margin: float = 0.08
     class_switch_penalty: float = 0.05
 

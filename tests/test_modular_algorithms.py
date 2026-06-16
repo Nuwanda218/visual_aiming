@@ -42,6 +42,41 @@ class TargetSelectorTest(unittest.TestCase):
         self.assertEqual(selected.detection.bbox, near_previous.bbox)
         self.assertFalse(selected.switched)
 
+    def test_switch_requires_meaningful_score_improvement(self):
+        from visual_aiming.algorithms.target_selection import TargetSelector
+
+        config = TargetSelectionConfig()
+        config.sticky_enabled = True
+        config.sticky_switch_margin = 0.35
+        selector = TargetSelector(config)
+
+        first = Detection((40, 40, 20, 20), confidence=0.90, class_id=0, class_name="head")
+        close_competitor = Detection((45, 40, 20, 20), confidence=0.91, class_id=0, class_name="head")
+
+        selected = selector.select([first], roi_center=(50, 50))
+        next_selected = selector.select([close_competitor, first], roi_center=(50, 50))
+
+        self.assertEqual(selected.detection.bbox, first.bbox)
+        self.assertEqual(next_selected.detection.bbox, first.bbox)
+        self.assertFalse(next_selected.switched)
+
+    def test_switches_when_new_target_is_clearly_better(self):
+        from visual_aiming.algorithms.target_selection import TargetSelector
+
+        config = TargetSelectionConfig()
+        config.sticky_enabled = True
+        config.sticky_switch_margin = 0.10
+        selector = TargetSelector(config)
+
+        old = Detection((10, 10, 20, 20), confidence=0.55, class_id=1, class_name="person")
+        better = Detection((45, 40, 20, 20), confidence=0.99, class_id=0, class_name="head")
+
+        selector.select([old], roi_center=(50, 50))
+        selected = selector.select([better, old], roi_center=(50, 50))
+
+        self.assertEqual(selected.detection.bbox, better.bbox)
+        self.assertTrue(selected.switched)
+
 
 class AimStrategyTest(unittest.TestCase):
     def test_head_aim_uses_head_bias_and_roi_offset(self):

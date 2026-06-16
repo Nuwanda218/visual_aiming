@@ -31,9 +31,12 @@ def modular_config_from_mapping(data: Mapping[str, Any]) -> ModularConfig:
     config.target_selection.head_class_id = int(data.get("yolo_head_class_id", config.target_selection.head_class_id))
     config.target_selection.person_class_id = int(data.get("yolo_person_class_id", config.target_selection.person_class_id))
     config.target_selection.target_preference = float(data.get("aim_target_preference", config.target_selection.target_preference))
+    config.target_selection.sticky_enabled = bool(data.get("target_sticky_enabled", config.target_selection.sticky_enabled))
     config.target_selection.stickiness = float(data.get("target_stickiness", config.target_selection.stickiness))
     config.target_selection.history_radius = int(data.get("target_history_radius", config.target_selection.history_radius))
-    config.target_selection.switch_margin = float(data.get("target_switch_margin", config.target_selection.switch_margin))
+    switch_margin = float(data.get("target_switch_margin", config.target_selection.switch_margin))
+    config.target_selection.switch_margin = switch_margin
+    config.target_selection.sticky_switch_margin = float(data.get("target_sticky_switch_margin", switch_margin))
     config.target_selection.class_switch_penalty = float(data.get("target_class_switch_penalty", config.target_selection.class_switch_penalty))
 
     config.aim.head_bias = float(data.get("head_bias", config.aim.head_bias))

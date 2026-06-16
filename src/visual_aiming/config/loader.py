@@ -44,7 +44,10 @@ def modular_config_from_mapping(data: Mapping[str, Any]) -> ModularConfig:
     config.prediction.alpha = float(data.get("tracker_smoothing_factor", config.prediction.alpha))
     config.prediction.lead_time = float(data.get("tracker_prediction_time", config.prediction.lead_time))
     config.prediction.reset_distance = float(data.get("tracker_reset_distance", config.prediction.reset_distance))
-    config.prediction.max_hold_ms = float(data.get("tracker_max_prediction_ms", config.prediction.max_hold_ms))
+    hold_ms = float(data.get("tracker_max_prediction_ms", config.prediction.hold_ms))
+    config.prediction.hold_ms = float(data.get("tracker_hold_ms", hold_ms))
+    config.prediction.hold_confidence = float(data.get("tracker_hold_confidence", config.prediction.hold_confidence))
+    config.prediction.max_hold_ms = config.prediction.hold_ms
     config.prediction.firing_freeze = bool(data.get("firing_disable_tracker_prediction", config.prediction.firing_freeze))
 
     config.control.deadzone = float(data.get("servo_deadzone", config.control.deadzone))

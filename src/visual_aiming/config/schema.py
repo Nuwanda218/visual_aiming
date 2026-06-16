@@ -59,6 +59,8 @@ class PredictionConfig:
     beta: float = 0.20
     lead_time: float = 0.025
     reset_distance: float = 200.0
+    hold_ms: float = 120.0
+    hold_confidence: float = 0.35
     max_hold_ms: float = 160.0
     firing_freeze: bool = True
 

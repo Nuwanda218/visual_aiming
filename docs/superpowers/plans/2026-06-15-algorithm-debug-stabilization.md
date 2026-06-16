@@ -392,7 +392,7 @@ Task 2 完成：目标选择新增切换迟滞，小幅评分波动不会立刻�
 - Modify: `src/visual_aiming/algorithms/prediction.py`
 - Modify: `tests/test_modular_algorithms.py`
 
-- [ ] **Step 1: Write failing tests for short loss hold**
+- [x] **Step 1: Write failing tests for short loss hold**
 
 Add to `PredictorTest` in `tests/test_modular_algorithms.py`:
 
@@ -436,7 +436,7 @@ def test_predictor_reports_lost_after_hold_window(self):
     self.assertIsNone(lost.point)
 ```
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 Run:
 
@@ -446,7 +446,7 @@ Run:
 
 Expected: fail because `PredictionConfig.hold_ms` or `"held"` behavior is missing or incomplete.
 
-- [ ] **Step 3: Add prediction config**
+- [x] **Step 3: Add prediction config**
 
 In `src/visual_aiming/config/schema.py`, extend `PredictionConfig`:
 
@@ -455,7 +455,7 @@ hold_ms: float = 120.0
 hold_confidence: float = 0.35
 ```
 
-- [ ] **Step 4: Implement held state**
+- [x] **Step 4: Implement held state**
 
 In `src/visual_aiming/algorithms/prediction.py`, when measurement is invalid but the last accepted point is recent:
 
@@ -472,7 +472,7 @@ if self._last_point is not None and age_ms <= max(0.0, float(self.config.hold_ms
 
 Use the existing internal field names in `AlphaBetaPredictor`; do not add duplicate state variables if equivalent fields already exist.
 
-- [ ] **Step 5: Verify predictor and analyzer compatibility**
+- [x] **Step 5: Verify predictor and analyzer compatibility**
 
 Run:
 
@@ -482,7 +482,7 @@ Run:
 
 Expected: tests pass and log analyzer state counts include `"held"` naturally through existing counting logic.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/visual_aiming/config/schema.py src/visual_aiming/algorithms/prediction.py tests/test_modular_algorithms.py

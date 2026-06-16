@@ -107,6 +107,7 @@ class ModularConfigTest(unittest.TestCase):
             "target_switch_margin": 0.25,
             "head_bias": 0.2,
             "tracker_prediction_time": 0.05,
+            "tracker_max_prediction_ms": 150.0,
             "servo_deadzone": 3.0,
             "servo_step_limit": 12,
             "mouse_absolute_mode_enabled": True,
@@ -124,6 +125,8 @@ class ModularConfigTest(unittest.TestCase):
         self.assertEqual(config.target_selection.sticky_switch_margin, 0.25)
         self.assertEqual(config.aim.head_bias, 0.2)
         self.assertEqual(config.prediction.lead_time, 0.05)
+        self.assertEqual(config.prediction.hold_ms, 150.0)
+        self.assertEqual(config.prediction.max_hold_ms, 150.0)
         self.assertEqual(config.control.deadzone, 3.0)
         self.assertEqual(config.control.max_step, 12)
         self.assertEqual(config.output.command_mode, "absolute")

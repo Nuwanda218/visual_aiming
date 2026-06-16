@@ -73,10 +73,11 @@ class AlphaBetaPredictor:
         if self.position is None or self.last_time is None:
             return PredictedAim(point=None, velocity=(0.0, 0.0), confidence=0.0, state="lost")
         age_ms = max(0.0, (now - self.last_time) * 1000.0)
-        if age_ms > max(0.0, self.config.max_hold_ms):
+        hold_ms = max(0.0, float(getattr(self.config, "hold_ms", self.config.max_hold_ms)))
+        if age_ms > hold_ms:
             self.reset()
             return PredictedAim(point=None, velocity=(0.0, 0.0), confidence=0.0, state="lost")
-        confidence = max(0.0, 1.0 - age_ms / max(1.0, self.config.max_hold_ms))
+        confidence = max(0.0, min(1.0, float(getattr(self.config, "hold_confidence", 0.35))))
         prediction = self._prediction(now, "held", confidence)
         return prediction
 

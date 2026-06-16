@@ -121,7 +121,7 @@ class PredictorTest(unittest.TestCase):
     def test_predictor_holds_recent_track_when_measurement_missing(self):
         from visual_aiming.algorithms.prediction import AlphaBetaPredictor
 
-        predictor = AlphaBetaPredictor(PredictionConfig(max_hold_ms=200.0))
+        predictor = AlphaBetaPredictor(PredictionConfig(hold_ms=200.0, hold_confidence=0.35))
         measurement = AimMeasurement(point=(100, 100), crosshair=(90, 100), error=(10.0, 0.0), valid=True)
         missing = AimMeasurement(point=None, crosshair=(90, 100), error=(0.0, 0.0), valid=False)
 
@@ -130,6 +130,20 @@ class PredictorTest(unittest.TestCase):
 
         self.assertEqual(predicted.state, "held")
         self.assertIsNotNone(predicted.point)
+        self.assertEqual(predicted.confidence, 0.35)
+
+    def test_predictor_reports_lost_after_hold_window(self):
+        from visual_aiming.algorithms.prediction import AlphaBetaPredictor
+
+        predictor = AlphaBetaPredictor(PredictionConfig(hold_ms=120.0, hold_confidence=0.35))
+        measurement = AimMeasurement(point=(100, 100), crosshair=(90, 100), error=(10.0, 0.0), valid=True)
+        missing = AimMeasurement(point=None, crosshair=(90, 100), error=(0.0, 0.0), valid=False)
+
+        predictor.update(measurement, RuntimeMode(active=True, firing=False), now=1.0)
+        lost = predictor.update(missing, RuntimeMode(active=True, firing=False), now=1.30)
+
+        self.assertEqual(lost.state, "lost")
+        self.assertIsNone(lost.point)
 
 
 class ControllerTest(unittest.TestCase):

@@ -932,7 +932,7 @@ Task 6 完成：项目有了视频回归清单和执行入口，可以把手动�
 - Modify: `docs/debug-workflow.md`
 - Modify: this plan file
 
-- [ ] **Step 1: Run full verification**
+- [x] **Step 1: Run full verification**
 
 Run:
 
@@ -950,7 +950,7 @@ Expected:
 - Diff check has no whitespace errors.
 - Legacy runtime scan has no matches.
 
-- [ ] **Step 2: Collect manual test instructions**
+- [x] **Step 2: Collect manual test instructions**
 
 Add to `docs/debug-workflow.md`:
 
@@ -965,7 +965,7 @@ Add to `docs/debug-workflow.md`:
 6. Do not enable real mouse output during this phase unless the task explicitly says so.
 ```
 
-- [ ] **Step 3: Commit phase wrap-up**
+- [x] **Step 3: Commit phase wrap-up**
 
 ```powershell
 git add docs/debug-workflow.md docs/superpowers/plans/2026-06-15-algorithm-debug-stabilization.md

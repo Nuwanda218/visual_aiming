@@ -146,3 +146,12 @@ If `sent` keeps increasing but in-game aim does not move, focus on game input mo
 ```
 
 Start with one short representative video before adding more cases. The command writes JSONL files under `logs/replay_regression/` and evaluates each case with its thresholds.
+
+### Manual phase check
+
+1. Run `python main.py --video-test`.
+2. Use a short video with visible enemies and empty-scene sections.
+3. Save the generated JSONL log.
+4. Run `python main.py --analyze-log logs\name.jsonl`.
+5. If the log has annotations, run `python scripts\evaluate_diagnostics.py logs\name.jsonl --min-visible-detection-rate 80 --max-empty-false-positive-rate 10 --max-target-switches 20`.
+6. Do not enable real mouse output during this phase unless the task explicitly says so.

@@ -697,7 +697,7 @@ Task 5 完成：常用调参只保留检测、瞄点、目标切换、短时保�
 - Create: `tests/test_replay_regression.py`
 - Modify: `docs/debug-workflow.md`
 
-- [ ] **Step 1: Write failing tests for suite manifest parsing**
+- [x] **Step 1: Write failing tests for suite manifest parsing**
 
 Create `tests/test_replay_regression.py`:
 
@@ -770,7 +770,7 @@ class ReplayRegressionTest(unittest.TestCase):
         self.assertEqual(calls[1][2:], (80.0, 5.0, 12))
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run:
 
@@ -780,7 +780,7 @@ Run:
 
 Expected: fail because `scripts.replay_regression` does not exist.
 
-- [ ] **Step 3: Implement manifest loader**
+- [x] **Step 3: Implement manifest loader**
 
 Create `scripts/replay_regression.py`:
 
@@ -878,7 +878,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 4: Verify task**
+- [x] **Step 4: Verify task**
 
 Run:
 
@@ -887,7 +887,7 @@ Run:
 .venv\Scripts\python.exe -m compileall -q scripts tests
 ```
 
-- [ ] **Step 5: Document manifest format**
+- [x] **Step 5: Document manifest format**
 
 Add to `docs/debug-workflow.md`:
 
@@ -911,7 +911,7 @@ Add to `docs/debug-workflow.md`:
 Start with one short representative video before adding more cases. The command writes JSONL files under `logs/replay_regression/` and evaluates each case with its thresholds.
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/replay_regression.py tests/test_replay_regression.py docs/debug-workflow.md

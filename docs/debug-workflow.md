@@ -124,3 +124,25 @@ If `sent` keeps increasing but in-game aim does not move, focus on game input mo
 2. Adjust `切换迟滞` when targets switch too often.
 3. Adjust `短时保持` when short detection gaps produce unstable commands.
 4. Adjust `死区` only after target selection and prediction are stable.
+
+### Replay regression manifest
+
+```json
+{
+  "cases": [
+    {
+      "name": "sample",
+      "video": "data/sample.mp4",
+      "min_visible_detection_rate": 80.0,
+      "max_empty_false_positive_rate": 5.0,
+      "max_target_switches": 12
+    }
+  ]
+}
+```
+
+```powershell
+.venv\Scripts\python.exe scripts\replay_regression.py tests\fixtures\replay_manifest.json
+```
+
+Start with one short representative video before adding more cases. The command writes JSONL files under `logs/replay_regression/` and evaluates each case with its thresholds.

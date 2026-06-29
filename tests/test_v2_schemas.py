@@ -47,5 +47,37 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(cmd.dy, -3)
 
 
+from visual_aiming_v2.shared.ports import ActuationPort, CapturePort, DetectorPort, OutputPort
+
+
+class PortsTests(unittest.TestCase):
+    def test_all_ports_importable(self):
+        self.assertIsNotNone(CapturePort)
+        self.assertIsNotNone(DetectorPort)
+        self.assertIsNotNone(ActuationPort)
+        self.assertIsNotNone(OutputPort)
+
+
+from visual_aiming_v2.shared.config import Config
+
+
+class ConfigTests(unittest.TestCase):
+    def test_defaults(self):
+        config = Config()
+
+        self.assertEqual(config.model_path, "models/best.pt")
+        self.assertEqual(config.confidence, 0.5)
+        self.assertEqual(config.device, "auto")
+        self.assertGreater(config.image_width, 0)
+        self.assertGreater(config.image_height, 0)
+
+    def test_overrides(self):
+        config = Config(model_path="custom.pt", confidence=0.8, device="cpu")
+
+        self.assertEqual(config.model_path, "custom.pt")
+        self.assertEqual(config.confidence, 0.8)
+        self.assertEqual(config.device, "cpu")
+
+
 if __name__ == "__main__":
     unittest.main()

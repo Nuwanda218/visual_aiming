@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, Sequence, Tuple
+from typing import Any, Tuple
 
 Point = Tuple[int, int]
 
 
 @dataclass(slots=True)
 class Frame:
-    sequence: int
     image: Any
+    sequence: int
     timestamp: float
-    crosshair: Point
 
 
 @dataclass(slots=True)
@@ -21,7 +20,7 @@ class Detection:
     w: int
     h: int
     confidence: float
-    label: str = "target"
+    label: str = "unknown"
 
     @property
     def center(self) -> Point:
@@ -36,13 +35,5 @@ class Command:
     reason: str = "noop"
 
     @classmethod
-    def noop(cls, reason: str) -> "Command":
+    def noop(cls, reason: str) -> Command:
         return cls(dx=0, dy=0, mode="none", reason=reason)
-
-
-@dataclass(slots=True)
-class TickResult:
-    frame: Frame
-    detections: Sequence[Detection]
-    selected: Optional[Detection]
-    command: Command

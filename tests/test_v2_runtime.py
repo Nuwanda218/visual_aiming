@@ -66,5 +66,58 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(len(result.detections), 2)
 
 
+from visual_aiming_v2.runtime.runner import run
+
+
+class RunnerTests(unittest.TestCase):
+    def test_processes_all_frames(self):
+        frames = [
+            Frame(image="a", sequence=0, timestamp=0.0),
+            Frame(image="b", sequence=1, timestamp=0.1),
+            Frame(image="c", sequence=2, timestamp=0.2),
+        ]
+        config = Config(image_width=200, image_height=200)
+        output = LogOutput()
+
+        results = run(
+            capture=MemoryCapture(frames),
+            detector=StaticDetector([Detection(x=10, y=10, w=10, h=10, confidence=0.9)]),
+            actuator=Actuator(config),
+            output=output,
+        )
+
+        self.assertEqual(len(results), 3)
+        self.assertEqual(len(output.commands), 3)
+
+    def test_max_frames_limits_processing(self):
+        frames = [Frame(image=f"f{i}", sequence=i, timestamp=i * 0.1) for i in range(10)]
+        config = Config(image_width=200, image_height=200)
+
+        results = run(
+            capture=MemoryCapture(frames),
+            detector=StaticDetector([]),
+            actuator=Actuator(config),
+            output=LogOutput(),
+            max_frames=3,
+        )
+
+        self.assertEqual(len(results), 3)
+
+    def test_closes_capture_and_output(self):
+        close_log = []
+        capture = MemoryCapture([])
+        output = LogOutput()
+        orig_cap_close = capture.close
+        orig_out_close = output.close
+        capture.close = lambda: (close_log.append("capture"), orig_cap_close())
+        output.close = lambda: (close_log.append("output"), orig_out_close())
+        config = Config(image_width=200, image_height=200)
+
+        run(capture=capture, detector=StaticDetector([]), actuator=Actuator(config), output=output)
+
+        self.assertIn("capture", close_log)
+        self.assertIn("output", close_log)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Tuple
+from typing import Any, Optional, Sequence, Tuple
 
 Point = Tuple[int, int]
 
@@ -37,3 +37,11 @@ class Command:
     @classmethod
     def noop(cls, reason: str) -> Command:
         return cls(dx=0, dy=0, mode="none", reason=reason)
+
+
+@dataclass
+class TickResult:
+    frame: Frame
+    detections: Sequence[Detection]
+    selected: Optional[Detection]
+    command: Command

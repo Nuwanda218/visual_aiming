@@ -70,5 +70,31 @@ class ActuatorTests(unittest.TestCase):
         self.assertEqual(cmd.reason, "on_target")
 
 
+from visual_aiming_v2.actuation.outputs import LogOutput, NullOutput
+
+
+class NullOutputTests(unittest.TestCase):
+    def test_apply_does_nothing(self):
+        output = NullOutput()
+        output.apply(Command.noop("test"))
+        output.close()
+
+
+class LogOutputTests(unittest.TestCase):
+    def test_records_commands(self):
+        output = LogOutput()
+        cmd = Command(dx=3, dy=-2, mode="relative", reason="tracking")
+
+        output.apply(cmd)
+
+        self.assertEqual(len(output.commands), 1)
+        self.assertEqual(output.commands[0].dx, 3)
+
+    def test_close_is_safe(self):
+        output = LogOutput()
+        output.close()
+        output.close()
+
+
 if __name__ == "__main__":
     unittest.main()

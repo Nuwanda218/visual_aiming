@@ -4,6 +4,10 @@ __pycache__/
 
 /logs/
 /config.json
+*.mp4
+*.avi
+*.mkv
+*.mov
 
 build/
 dist/

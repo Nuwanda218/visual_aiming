@@ -1,8 +1,11 @@
 """图像获取层 — 帧获取与预处理。"""
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Iterable, Optional
+
+import numpy as np
 
 from visual_aiming_v2.shared.config import Config
 from visual_aiming_v2.shared.schemas import Frame
@@ -79,3 +82,44 @@ class VideoFileCapture:
 
     def close(self) -> None:
         self.capture.release()
+
+
+class ScreenCapture:
+    """实时屏幕截屏输入源，以屏幕中心为基准裁切 ROI 区域。
+
+    使用 mss 库截屏，每次 read() 截取一帧。
+    """
+
+    def __init__(self, config: Config) -> None:
+        import mss
+
+        self._sct = mss.mss()
+        self._sequence = 0
+
+        # 获取屏幕分辨率
+        monitor = self._sct.monitors[1]  # 主显示器
+        screen_w = monitor["width"]
+        screen_h = monitor["height"]
+
+        # ROI 裁切参数（以屏幕中心为基准）
+        roi_w = min(config.image_width, screen_w)
+        roi_h = min(config.image_height, screen_h)
+        self._roi = {
+            "left": (screen_w - roi_w) // 2,
+            "top": (screen_h - roi_h) // 2,
+            "width": roi_w,
+            "height": roi_h,
+        }
+
+    def read(self) -> Optional[Frame]:
+        """截取一帧屏幕 ROI 区域。"""
+        img = self._sct.grab(self._roi)
+        # mss 返回 BGRA，转为 BGR（与 OpenCV 一致）
+        frame = np.array(img)[:, :, :3]
+
+        seq = self._sequence
+        self._sequence += 1
+        return Frame(image=frame, sequence=seq, timestamp=time.perf_counter())
+
+    def close(self) -> None:
+        self._sct.close()

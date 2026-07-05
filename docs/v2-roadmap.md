@@ -170,17 +170,96 @@ def move_mouse_fps_style(self, target_x, target_y, speed):
 
 ---
 
+## P4：实时模式 — 热键激活 + 截屏 + 流水线
+
+**目标：** 从视频回放测试过渡到真正的实时截屏运行，通过热键控制激活/停用。
+
+### 热键逻辑（复用 V1）
+
+**激活条件：** 同时按住 Shift + 右键，然后按左键
+**停用条件：** 释放 Shift 或释放右键
+**退出条件：** Ctrl+Q
+
+```
+空闲状态（不截屏、不检测、不动鼠标）
+    │
+    ├── 按住 Shift + 右键 + 左键 → 激活
+    │
+激活状态（截屏 → 检测 → 控制 → 鼠标输出）
+    │
+    ├── 释放 Shift 或 右键 → 停用，回到空闲
+    ├── Ctrl+Q → 退出程序
+```
+
+**技术实现：** pynput 键鼠监听器，独立线程，事件驱动。
+只设三个 bool 标志（shift_pressed / right_pressed / left_held），主循环每帧读取，开销为零。
+
+**归属层：** interaction 层（用户输入）。
+
+### 运行模型（方案 B — 单线程 + 跳帧检测）
+
+```
+主循环（目标 ~120fps）:
+    frame = capture.read()                    # 截屏 ~2ms
+
+    if 到了检测时间 (每 1/30 秒):
+        detections = detector.detect(frame)   # YOLO ~10ms
+    else:
+        复用上次 detections                    # ~0ms
+
+    command = actuator.process(detections)     # 选目标+瞄点+FPS控制 <0.1ms
+    output.apply(command)                      # SendInput 鼠标移动 <0.1ms
+```
+
+检测帧 ~12ms，跳过帧 ~2ms，平均 ~4.5ms/帧（~220fps 鼠标输出，30fps 检测）。
+FpsController 的速度状态在跳帧时持续输出，鼠标移动不中断。
+
+**归属层：** runtime 层（调度决策）。
+
+**修改/新增文件：**
+
+| 文件 | 操作 | 内容 |
+|------|------|------|
+| `interaction/hotkey.py` | 新建 | pynput 热键监听（复用 V1 的 WakeUpModule 逻辑） |
+| `capture/sources.py` | 修改 | 新增 ScreenCapture（mss 截屏 + ROI 裁切） |
+| `runtime/realtime.py` | 新建 | 实时运行循环（方案 B 跳帧逻辑） |
+| `interaction/cli.py` | 修改 | 新增 `--realtime` 模式入口 |
+
+---
+
 ## 执行顺序
 
 ```
-P1 可视化调试窗口    ← 先做，后续所有优化都靠它验证
+P1 可视化调试窗口    ← 已完成 ✅
     ↓
-P2 瞄点选择策略      ← 有头选头，无头选 body + 偏置
+P2 瞄点选择策略      ← 已完成 ✅
     ↓
-P3 鼠标控制逻辑      ← FPS 风格速度模型 + 真实鼠标输出
+P3 鼠标控制逻辑      ← 已完成 ✅
+    ↓
+P4 实时模式          ← 热键 + 截屏 + 实时运行循环
 ```
 
-P1 是基础设施，P2 和 P3 都需要它来调试。
+## 最终目标
+
+**准星吸附效果：** 实时截屏检测敌人位置，平滑移动鼠标使准星吸附在敌人身上。
+
+这个效果由三层协作产生：
+
+```
+perception  →  多久看一次、看到了谁      →  决定"反应速度"
+actuation   →  瞄哪里、怎么移过去        →  决定"吸附手感"
+runtime     →  多久做一次决策、跳不跳帧   →  决定"平滑度"
+```
+
+| 感受 | 由谁决定 | 怎么调 |
+|------|---------|--------|
+| 反应快慢 | runtime 检测频率 | detect_fps |
+| 移动平滑度 | actuation FpsController | acceleration, speed |
+| 是否过冲 | actuation 减速逻辑 | decel 参数 |
+| 目标切换跳变 | actuation 目标选择 | 粘性、切换阈值（后续加） |
+| 整体延迟 | runtime 主循环频率 | 主循环 fps |
+
+各层独立可调，通过实际测试效果来迭代参数，不需要提前确定最优值。
 
 ## 执行原则
 

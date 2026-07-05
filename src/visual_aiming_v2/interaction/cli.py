@@ -8,7 +8,8 @@ from pathlib import Path
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="V2 视觉瞄准运行时")
-    parser.add_argument("--video", required=True, help="视频文件路径")
+    parser.add_argument("--video", default="", help="视频文件路径（视频回放模式）")
+    parser.add_argument("--realtime", action="store_true", help="实时截屏模式（热键激活）")
     parser.add_argument("--model", default="models/best.pt", help="YOLO 模型路径")
     parser.add_argument("--output", choices=["null", "log", "mouse"], default="null", help="输出后端（mouse 需确认安全）")
     parser.add_argument("--max-frames", type=int, default=0, help="最多处理帧数，0 表示全部")
@@ -28,27 +29,12 @@ def load_config_file(path: str) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
-
-    # 调参模式：不跑流水线，打开调参窗口
-    if args.tune == "capture":
-        from visual_aiming_v2.interaction.tuner import CaptureTuner
-        tuner = CaptureTuner(args.video, config_path=args.config)
-        tuner.run()
-        return 0
-
-    # 真实运行依赖在 main 内部导入，避免 parse_args/load_config_file 的测试加载重依赖。
-    from visual_aiming_v2.actuation.outputs import LogOutput, NullOutput, WinMouseOutput
-    from visual_aiming_v2.actuation.targeting import Actuator
-    from visual_aiming_v2.capture.sources import VideoFileCapture
-    from visual_aiming_v2.perception.detectors import YoloDetector
-    from visual_aiming_v2.runtime.runner import run
+def _build_config(args) -> "Config":
+    """合并配置：命令行参数 > config.json 默认值。"""
     from visual_aiming_v2.shared.config import Config
 
-    # 合并配置：命令行参数 > config.json 默认值
     file_config = load_config_file(args.config)
-    config = Config(
+    return Config(
         model_path=args.model or file_config.get("model_path", "models/best.pt"),
         confidence=float(file_config.get("confidence", 0.5)),
         iou=float(file_config.get("iou", 0.45)),
@@ -59,13 +45,88 @@ def main(argv: list[str] | None = None) -> int:
         crosshair_offset_y=int(file_config.get("crosshair_offset_y", 0)),
     )
 
-    # 组装各层组件
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+
+    # 调参模式
+    if args.tune == "capture":
+        if not args.video:
+            print("[错误] --tune capture 需要 --video 参数")
+            return 1
+        from visual_aiming_v2.interaction.tuner import CaptureTuner
+        CaptureTuner(args.video, config_path=args.config).run()
+        return 0
+
+    # 实时模式
+    if args.realtime:
+        return _run_realtime(args)
+
+    # 视频回放模式
+    if args.video:
+        return _run_video(args)
+
+    print("[错误] 需要 --video 或 --realtime 参数")
+    return 1
+
+
+def _run_realtime(args) -> int:
+    """实时截屏模式：热键激活，截屏→检测→控制→鼠标输出。"""
+    from visual_aiming_v2.actuation.outputs import LogOutput, NullOutput, WinMouseOutput
+    from visual_aiming_v2.actuation.targeting import Actuator
+    from visual_aiming_v2.capture.sources import ScreenCapture
+    from visual_aiming_v2.interaction.hotkey import HotkeyListener
+    from visual_aiming_v2.perception.detectors import YoloDetector
+    from visual_aiming_v2.runtime.realtime import run_realtime
+
+    config = _build_config(args)
+
+    capture = ScreenCapture(config)
+    detector = YoloDetector(config)
+    # 实时模式默认启用 FPS 控制器
+    actuator = Actuator(config, use_controller=True)
+
+    # 输出后端
+    if args.output == "mouse":
+        output = WinMouseOutput(enable=True)
+    elif args.output == "log":
+        output = LogOutput()
+    else:
+        output = NullOutput()
+
+    # 热键监听
+    hotkey = HotkeyListener()
+    hotkey.start()
+
+    try:
+        run_realtime(
+            capture=capture,
+            detector=detector,
+            actuator=actuator,
+            output=output,
+            hotkey=hotkey,
+        )
+    finally:
+        hotkey.stop()
+
+    return 0
+
+
+def _run_video(args) -> int:
+    """视频回放模式：逐帧处理视频文件。"""
+    from visual_aiming_v2.actuation.outputs import LogOutput, NullOutput, WinMouseOutput
+    from visual_aiming_v2.actuation.targeting import Actuator
+    from visual_aiming_v2.capture.sources import VideoFileCapture
+    from visual_aiming_v2.perception.detectors import YoloDetector
+    from visual_aiming_v2.runtime.runner import run
+
+    config = _build_config(args)
+
     capture = VideoFileCapture(args.video, config)
     detector = YoloDetector(config)
     use_mouse = args.output == "mouse"
     actuator = Actuator(config, use_controller=use_mouse)
 
-    # 输出后端
     if use_mouse:
         output = WinMouseOutput(enable=True)
     elif args.output == "log":
@@ -74,29 +135,19 @@ def main(argv: list[str] | None = None) -> int:
         output = NullOutput()
     max_frames = args.max_frames if args.max_frames > 0 else None
 
-    # 诊断日志（--verbose 开启）
+    # 诊断日志
     diagnostics = None
     if args.verbose:
         from visual_aiming_v2.runtime.diagnostics import DiagnosticLogger
-        import cv2
-        # 获取视频总帧数用于显示进度
-        cap = cv2.VideoCapture(args.video)
-        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        cap.release()
-        diagnostics = DiagnosticLogger(total_frames=total, source_name="video")
+        diagnostics = DiagnosticLogger(total_frames=capture.total_frames, source_name="video")
 
-    # 可视化窗口（--visual 开启）
+    # 可视化窗口
     on_tick = None
     if args.visual:
         from visual_aiming_v2.interaction.visualizer import Visualizer
-        crosshair = actuator.crosshair
-        total = capture.total_frames if hasattr(capture, "total_frames") else 0
-        vis = Visualizer(crosshair=crosshair, total_frames=total)
-        def _on_tick(frame, result):
-            return vis.update(frame.image, result)
-        on_tick = _on_tick
+        vis = Visualizer(crosshair=actuator.crosshair, total_frames=capture.total_frames)
+        on_tick = lambda frame, result: vis.update(frame.image, result)
 
-    # 启动运行
     results = run(
         capture=capture,
         detector=detector,

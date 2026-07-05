@@ -56,12 +56,14 @@ class Pipeline:
         return result
 
     def _find_selected(self, detections: list[Detection], command) -> Optional[Detection]:
-        """根据 actuation 的 crosshair 反推被选中的目标（用于诊断记录）。"""
-        if not detections or command.mode == "none":
+        """根据 actuation 的 crosshair 反推被选中的目标（用于诊断和可视化）。"""
+        if not detections:
+            return None
+        # no_target 时确实没选中
+        if command.reason == "no_target":
             return None
         crosshair = getattr(self.actuator, "crosshair", None)
         if crosshair is None:
-            # 若未来换成不暴露 crosshair 的 actuator，诊断层仍保持可用。
             return detections[0] if detections else None
         # 选距离 crosshair 最近的（与 actuation 逻辑一致）
         cx, cy = crosshair

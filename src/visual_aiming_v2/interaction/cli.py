@@ -14,6 +14,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-frames", type=int, default=0, help="最多处理帧数，0 表示全部")
     parser.add_argument("--config", default="config.json", help="配置文件路径")
     parser.add_argument("--verbose", action="store_true", help="启用逐帧诊断日志输出")
+    parser.add_argument("--visual", action="store_true", help="启用 OpenCV 可视化调试窗口")
     parser.add_argument("--tune", choices=["capture"], default="", help="进入调参模式（目前支持 capture）")
     return parser.parse_args(argv)
 
@@ -77,6 +78,17 @@ def main(argv: list[str] | None = None) -> int:
         cap.release()
         diagnostics = DiagnosticLogger(total_frames=total, source_name="video")
 
+    # 可视化窗口（--visual 开启）
+    on_tick = None
+    if args.visual:
+        from visual_aiming_v2.interaction.visualizer import Visualizer
+        crosshair = actuator.crosshair
+        total = capture.total_frames if hasattr(capture, "total_frames") else 0
+        vis = Visualizer(crosshair=crosshair, total_frames=total)
+        def _on_tick(frame, result):
+            return vis.update(frame.image, result)
+        on_tick = _on_tick
+
     # 启动运行
     results = run(
         capture=capture,
@@ -85,6 +97,7 @@ def main(argv: list[str] | None = None) -> int:
         output=output,
         max_frames=max_frames,
         diagnostics=diagnostics,
+        on_tick=on_tick,
     )
     print(f"\n[V2] 处理完成: {len(results)} 帧")
     return 0

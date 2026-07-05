@@ -2,152 +2,188 @@
 
 ## 当前状态
 
-六层架构已搭建完毕，基础流水线可端到端运行，逐帧诊断日志已实现。
-通过 `--verbose` 诊断输出，发现以下待优化项。
+六层架构已搭建完毕，基础流水线可端到端运行，逐帧诊断日志和 capture 层 ROI 裁切已完成。
+
+**已完成：**
+- ✅ Plan 1~3：六层架构搭建
+- ✅ P0：capture 层 ROI 裁切 + 调参窗口
+- ✅ `--verbose` 逐帧诊断日志
 
 ---
 
-## P0：调参系统 + capture 层完善
+## P1：可视化调试窗口（实时流水线可视化）
 
-### 整体设计
+**问题：** 运行流水线时只有终端文字日志，无法直观看到检测效果和控制方向。后续的瞄点选择和鼠标控制都需要可视化才能有效调试。
 
-建立一个基于 OpenCV 的调参窗口系统，分为六个标签页对应六层架构，每层的参数可实时调节并预览效果。
+**目标：** 在流水线运行时打开 OpenCV 窗口，每帧画面上实时叠加显示检测结果和控制信息。
 
-**技术选型：** OpenCV（trackbar + 画面渲染），因为 capture 层调参需要实时预览裁切效果，OpenCV 可以在同一窗口中同时显示画面和参数滑块。
-
-**窗口结构：**
+**窗口设计：**
 ```
-┌─────────────────────────────────────────────────┐
-│  [capture] [perception] [actuation] [runtime]   │  ← 标签页（按需逐步实现）
-│  [interaction] [shared]                          │
-├─────────────────────────────────────────────────┤
-│                                                  │
-│              实时画面预览区域                       │
-│    （显示当前帧 + ROI 框 + 准星位置）               │
-│                                                  │
-├─────────────────────────────────────────────────┤
-│  ROI 宽度   [====●===========] 410               │  ← trackbar 参数区
-│  ROI 高度   [====●===========] 315               │
-│  准星 X     [=========●======] 205               │
-│  准星 Y     [=======●========] 157               │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│                                                    │
+│    [绿色框] 检测到的目标 (head)                      │
+│    [黄色框] 检测到的目标 (person)                     │
+│    [红色圆点] 瞄准点                                 │
+│    [蓝色十字] 准星位置                               │
+│    [品红箭头] 控制方向 (dx, dy)                      │
+│                                                    │
+├──────────────────────────────────────────────────┤
+│  Frame: 42/5400 | FPS: 95.2 | Det: 2 | 8.3ms     │  ← OSD 信息栏
+└──────────────────────────────────────────────────┘
 ```
 
-### 第一步实现：capture 层调参 + ROI 裁切
+**绘制元素：**
 
-**目标：** 解决当前最严重的问题——capture 输出未裁切的全帧图像，同时提供可视化调参能力。
+| 元素 | 颜色 | 说明 |
+|------|------|------|
+| 检测框 (head) | 绿色 | 绘制 bbox + 标签 + 置信度 |
+| 检测框 (person) | 黄色 | 同上，颜色区分类别 |
+| 选中目标框 | 白色加粗 | 被 actuation 选中的目标，加粗边框突出 |
+| 瞄准点 | 红色圆点 | actuation 计算出的瞄准位置 |
+| 准星 | 蓝色十字线 | 画面中心 + 偏移 |
+| 控制箭头 | 品红色 | 从准星指向瞄准点，长度按 dx/dy 缩放 |
+| OSD 信息 | 白色文字 | 帧号、FPS、检测数量、管道延迟 |
 
-**功能清单：**
+**操作按键：**
 
-1. **ROI 裁切逻辑**（capture/sources.py）
-   - VideoFileCapture 增加 ROI 裁切功能
-   - 根据 Config 中的 image_width / image_height，以画面中心为基准裁切
-   - 裁切后输出固定尺寸的 Frame，画面中心即准星位置
-   - 当配置的 ROI 大于视频分辨率时，使用视频原始尺寸（不放大）
+| 键 | 功能 |
+|---|---|
+| Space | 暂停/继续播放 |
+| Q / ESC | 退出 |
 
-2. **调参窗口**（新文件，放在 interaction/ 层）
-   - OpenCV 窗口显示当前视频帧
-   - 在全帧画面上绘制 ROI 裁切框（矩形）和准星位置（十字线）
-   - trackbar 参数：
-     - `ROI 宽度`：范围 100 ~ 视频宽度，步长 10
-     - `ROI 高度`：范围 100 ~ 视频高度，步长 10
-     - `准星 X 偏移`：相对于 ROI 中心的偏移，范围 -100 ~ +100，默认 0
-     - `准星 Y 偏移`：相对于 ROI 中心的偏移，范围 -100 ~ +100，默认 0
-   - 拖动 trackbar 时实时更新画面上的 ROI 框和准星位置
-   - 按 S 保存当前参数到 config.json
-   - 按 Q/ESC 退出
-
-3. **CLI 入口**
-   - `python main_v2.py --video xxx.mp4 --tune capture` 启动 capture 层调参模式
-   - 调参模式下不跑完整流水线，只显示视频帧 + ROI 预览
-
-**预期调参流程：**
+**CLI 入口：**
 ```
-用户运行: python main_v2.py --video test.mp4 --tune capture
-
-  → 打开 OpenCV 窗口
-  → 显示视频第一帧（或按 → 切换帧）
-  → 画面上显示灰色 ROI 矩形框 + 蓝色十字准星
-  → 拖动 ROI 宽度/高度滑块 → 矩形框实时变化
-  → 拖动准星偏移滑块 → 十字线位置实时变化
-  → 按 S 保存参数
-  → 按 Q 退出
+python main_v2.py --video test.mp4 --visual
+python main_v2.py --video test.mp4 --visual --verbose   ← 同时看画面和终端日志
 ```
 
 **修改/新增文件：**
 
 | 文件 | 操作 | 内容 |
 |------|------|------|
-| `capture/sources.py` | 修改 | VideoFileCapture 增加 ROI 裁切 |
-| `interaction/tuner.py` | 新建 | OpenCV 调参窗口（先实现 capture 标签页） |
-| `interaction/cli.py` | 修改 | 添加 `--tune` 参数 |
-| `shared/config.py` | 修改 | 添加准星偏移字段 crosshair_offset_x / crosshair_offset_y |
-| `tests/test_v2_capture.py` | 修改 | 添加 ROI 裁切的测试用例 |
-
-**验证方式：**
-- 单元测试：验证 ROI 裁切后的 Frame 尺寸正确
-- `--verbose` 日志：确认 capture OUTPUT 的 image 尺寸与配置一致
-- `--tune capture`：可视化确认 ROI 框位置正确
+| `interaction/visualizer.py` | 新建 | OpenCV 可视化渲染器（接收 TickResult，绘制叠加层） |
+| `runtime/pipeline.py` | 修改 | tick() 返回的 TickResult 需要携带 selected 目标信息 |
+| `interaction/cli.py` | 修改 | 添加 `--visual` 参数，创建可视化观察者 |
+| `runtime/runner.py` | 修改 | 支持可选的帧回调（每帧通知可视化器） |
 
 **架构边界检查：**
-- ROI 裁切 → capture 层内部职责 ✓
-- 准星偏移配置 → shared/config.py ✓
-- 调参窗口 → interaction 层（对接用户）✓
-- perception / actuation / runtime 不需要任何修改 ✓
+- 可视化渲染 → interaction 层（对接用户）✓
+- runner 通过回调通知，不直接依赖可视化实现 ✓
+- capture / perception / actuation 不需要任何修改 ✓
+
+**与 P0 调参窗口的区别：**
+- P0 调参窗口：静态帧预览，手动切帧，调整参数
+- P1 可视化窗口：流水线运行时实时播放，展示检测和控制效果
 
 ---
 
-## P1：actuation 层类别偏好（待展开）
+## P2：瞄点选择策略 — 有头选头，无头选 person
 
-**问题：** actuation 当前只按距离选最近目标，不区分 head 和 person 类别。
+**问题：** actuation 当前只按距离选最近目标，不区分 head 和 person 类别。同时瞄准点直接使用 detection center，对 person 框来说瞄的是躯干中心。
 
-**诊断日志证据：**
+**目标：** 合并原 P1（类别偏好）和 P2（瞄点偏置）为一个完整的瞄点策略。
+
+**选择规则：**
 ```
-Frame #2  SELECT  #1 person  center=(147,400)  distance=249.8px
-          ← 同帧有 head 检测框，但 person 距离更近所以被选中
+1. 优先选 head（距离准星最近的 head）
+2. 没有 head 时选 person（距离准星最近的 person）
+3. head 的瞄准点 = 检测框中心偏上（head_bias，默认 0.35）
+4. person 的瞄准点 = 检测框顶部偏下（body_bias，默认 0.25），估算头部位置
 ```
 
-**目标：** 目标选择时引入类别权重，head 类别应优先于 person。
+**修改/新增文件：**
 
-**影响范围：** 仅 actuation/targeting.py。
+| 文件 | 操作 | 内容 |
+|------|------|------|
+| `actuation/targeting.py` | 修改 | select 逻辑改为有头选头；compute_error 加偏置 |
+| `shared/config.py` | 修改 | 添加 head_bias / body_bias / head_label / person_label |
+| `tests/test_v2_actuation.py` | 修改 | 添加类别选择和偏置的测试用例 |
 
----
+**架构边界检查：**
+- 目标选择 + 瞄点偏置 → actuation 层内部 ✓
+- 偏置参数 → shared/config.py ✓
+- 其他层不需要修改 ✓
 
-## P2：actuation 层瞄点偏置（待展开）
-
-**问题：** 瞄准点直接使用 detection 的 center，对 person 框来说瞄的是躯干中心而非头部。
-
-**目标：** 对不同类别的检测框施加不同的垂直偏置。
-
-**影响范围：** actuation/targeting.py 内部。
-
----
-
-## P3：可视化调试窗口（待展开）
-
-**问题：** 运行流水线时无法直观看到检测框、瞄准点、控制方向。
-
-**目标：** 在流水线运行时叠加绘制检测框、选中目标、瞄准点、控制箭头。
-
-**说明：** P0 的调参窗口是静态帧预览调参用的，P3 是流水线运行时的实时可视化，两者独立。
-
-**影响范围：** 新增模块，不影响流水线各级。
+**验证方式：**
+- 单元测试：有 head 和 person 同时存在时优先选 head
+- `--visual` 窗口：确认红色瞄准点在 head 框的偏上位置，而不是 center
 
 ---
 
-## P4：控制层预测与平滑（待展开）
+## P3：鼠标控制逻辑 — 直接复用已有实现
 
-**问题：** actuation 当前直接输出原始 dx/dy 误差，没有速度控制、平滑或预测。
+**问题：** actuation 当前直接输出原始 dx/dy 误差作为 Command，没有速度模型。如果直接用这个值移动鼠标，会出现瞬间跳变、没有惯性、没有减速。
 
-**目标：** 引入速度平滑、加减速控制。
+**方案：** 直接复用 `C:\Users\Nuwanda\Desktop\main.py` 中的 MouseController 逻辑，移植到 actuation 层。不重新设计控制算法。
 
-**影响范围：** actuation 层内部。
+**复用内容（来自 main.py 的 MouseController）：**
+```python
+def move_mouse_fps_style(self, target_x, target_y, speed):
+    # 1. 计算当前鼠标到目标的距离和方向
+    dx = target_x - current_x
+    dy = target_y - current_y
+    dist = distance(0, 0, dx, dy)
+
+    # 2. 方向加微扰（模拟人手抖动）
+    target_angle = math.atan2(dy, dx)
+    angle_deviation = random.uniform(-0.3, 0.3) * deviation_factor
+    perturbed_angle = target_angle + angle_deviation
+
+    # 3. 速度追随（加速度平滑）
+    target_vel_x = math.cos(perturbed_angle) * speed
+    self.velocity_x += (target_vel_x - self.velocity_x) * self.acceleration
+
+    # 4. 近距离减速（防止过冲）
+    if dist < speed * 3:
+        decel_factor = max(0.1, dist / (speed * 3))
+        self.velocity_x *= decel_factor
+
+    # 5. 加微抖动后移动鼠标
+    self.set_mouse_position(jx, jy)
+```
+
+**移植方式：**
+- 将 `move_mouse_fps_style()` 的核心逻辑封装为 `actuation/control.py` 中的 `FpsController` 类
+- 保留原始的速度追随、减速、抖动逻辑，不做修改
+- `Actuator.process()` 内部调用 `FpsController` 将原始误差转化为平滑移动量
+- 真实鼠标输出通过 `WinMouseOutput`（使用 `SetCursorPos`，与原文件一致）
+
+**修改/新增文件：**
+
+| 文件 | 操作 | 内容 |
+|------|------|------|
+| `actuation/control.py` | 新建 | FpsController — 直接移植 main.py 的 move_mouse_fps_style 逻辑 |
+| `actuation/targeting.py` | 修改 | Actuator 内部使用 FpsController |
+| `actuation/outputs.py` | 修改 | 新增 WinMouseOutput（SetCursorPos，需安全开关） |
+| `shared/config.py` | 修改 | 添加 speed / acceleration / jitter_intensity 参数 |
+| `tests/test_v2_actuation.py` | 修改 | FpsController 单元测试 |
+
+**架构边界检查：**
+- 速度控制器 → actuation 层内部 ✓
+- 鼠标输出 → actuation/outputs.py（OutputPort 实现）✓
+- 其他层不需要修改 ✓
+
+**验证方式：**
+- 单元测试：验证减速、死区、速度上限行为
+- `--visual` 窗口：观察控制箭头是否平滑、是否有减速效果
+- 真实鼠标测试：`--output mouse`（需安全确认）
 
 ---
+
+## 执行顺序
+
+```
+P1 可视化调试窗口    ← 先做，后续所有优化都靠它验证
+    ↓
+P2 瞄点选择策略      ← 有头选头，无头选 body + 偏置
+    ↓
+P3 鼠标控制逻辑      ← FPS 风格速度模型 + 真实鼠标输出
+```
+
+P1 是基础设施，P2 和 P3 都需要它来调试。
 
 ## 执行原则
 
 - 每个优化项独立完成、独立测试、独立提交
-- 修改前先用 `--verbose` 日志确认问题，修改后再用日志验证效果
+- 修改前先用 `--verbose` 日志确认问题，修改后用 `--visual` 窗口验证效果
 - 遵守架构边界：每个优化只影响对应的层，不跨层修改
-- 调参窗口按层逐步实现，每完成一层的调参再做下一层

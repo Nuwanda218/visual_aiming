@@ -66,14 +66,15 @@ class CaptureTuner:
         while True:
             self._render()
 
-            key = cv2.waitKey(30) & 0xFF
+            # waitKeyEx 获取完整键值，兼容 Windows 方向键
+            key = cv2.waitKeyEx(30)
             if key in (ord("q"), ord("Q"), 27):  # Q / ESC
                 break
-            elif key == ord("s") or key == ord("S"):
+            elif key in (ord("s"), ord("S")):
                 self._save_config()
-            elif key == 83:  # → 右箭头
+            elif key in (0x270000, 2555904, 83):  # → 右箭头（Windows / Linux）
                 self._read_frame(min(self._frame_index + 1, self.total_frames - 1))
-            elif key == 81:  # ← 左箭头
+            elif key in (0x250000, 2424832, 81):  # ← 左箭头（Windows / Linux）
                 self._read_frame(max(self._frame_index - 1, 0))
 
             # 检查窗口是否被关闭

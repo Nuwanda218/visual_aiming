@@ -91,7 +91,14 @@ class ScreenCapture:
     """
 
     def __init__(self, config: Config) -> None:
+        import ctypes
         import mss
+
+        # 声明 DPI 感知，确保 mss 获取真实屏幕分辨率（不被 Windows 缩放影响）
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
 
         self._sct = mss.mss()
         self._sequence = 0
@@ -110,6 +117,8 @@ class ScreenCapture:
             "width": roi_w,
             "height": roi_h,
         }
+        print(f"[ScreenCapture] 屏幕: {screen_w}×{screen_h} | ROI: {roi_w}×{roi_h} "
+              f"at ({self._roi['left']},{self._roi['top']}) | 准星中心: ({roi_w//2},{roi_h//2})")
 
     def read(self) -> Optional[Frame]:
         """截取一帧屏幕 ROI 区域。"""

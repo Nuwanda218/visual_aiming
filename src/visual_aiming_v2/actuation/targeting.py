@@ -6,6 +6,7 @@ from typing import Optional, Sequence
 
 from visual_aiming_v2.shared.config import Config
 from visual_aiming_v2.shared.schemas import Command, Detection, Point
+from visual_aiming_v2.actuation.control import FpsController
 
 
 def select_target(
@@ -58,9 +59,9 @@ def compute_error(aim_point: Point, crosshair: Point) -> tuple[int, int]:
 
 
 class Actuator:
-    """把 Detection 序列转换为 Command，当前不直接执行任何系统鼠标动作。"""
+    """把 Detection 序列转换为 Command。支持直接误差输出或 FPS 速度控制。"""
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, use_controller: bool = False) -> None:
         # 准星 = ROI 中心 + 偏移量
         offset_x = getattr(config, "crosshair_offset_x", 0)
         offset_y = getattr(config, "crosshair_offset_y", 0)
@@ -72,17 +73,36 @@ class Actuator:
         self.head_bias = getattr(config, "head_bias", 0.35)
         self.body_bias = getattr(config, "body_bias", 0.25)
 
+        # FPS 速度控制器（可选）
+        self.controller: FpsController | None = None
+        if use_controller:
+            self.controller = FpsController(
+                speed=getattr(config, "control_speed", 100.0),
+                acceleration=getattr(config, "control_acceleration", 0.3),
+                jitter_intensity=getattr(config, "control_jitter", 0.5),
+                deadzone=getattr(config, "control_deadzone", 0.1),
+            )
+
     def process(self, detections: Sequence[Detection]) -> Command:
         # 有头选头，无头选 person
         selected = select_target(detections, self.crosshair, self.head_label, self.person_label)
         if selected is None:
+            if self.controller is not None:
+                self.controller.reset()
             return Command.noop("no_target")
 
         # 计算瞄准点（带偏置）
         aim_point = compute_aim_point(selected, self.head_label, self.head_bias, self.body_bias)
 
         # 计算误差
-        dx, dy = compute_error(aim_point, self.crosshair)
+        ex, ey = compute_error(aim_point, self.crosshair)
+
+        # 通过 FPS 控制器平滑输出，或直接输出原始误差
+        if self.controller is not None:
+            dx, dy = self.controller.update(float(ex), float(ey))
+        else:
+            dx, dy = ex, ey
+
         if dx == 0 and dy == 0:
             return Command.noop("on_target")
 

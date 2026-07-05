@@ -26,3 +26,9 @@ class Config:
     person_label: str = "person"   # person 类别标签名
     head_bias: float = 0.35        # head 框瞄准点垂直偏置（0=顶部, 0.5=中心, 1=底部）
     body_bias: float = 0.25        # person 框瞄准点垂直偏置（偏上估算头部位置）
+
+    # actuation 层 — FPS 鼠标控制
+    control_speed: float = 100.0        # 移动速度
+    control_acceleration: float = 0.3   # 速度追随系数（0~1，越大越跟手）
+    control_jitter: float = 0.5         # 抖动强度（模拟人手微颤）
+    control_deadzone: float = 0.1       # 误差死区（像素）

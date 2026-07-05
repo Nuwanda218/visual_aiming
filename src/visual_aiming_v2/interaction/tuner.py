@@ -48,7 +48,13 @@ class CaptureTuner:
     def run(self) -> None:
         """主循环：显示窗口，处理输入。"""
         cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(self.WINDOW_NAME, min(1280, self.video_w), min(720, self.video_h))
+
+        # 等比缩放窗口，保持原始画面比例
+        max_w, max_h = 1280, 720
+        scale = min(max_w / self.video_w, max_h / self.video_h, 1.0)
+        win_w = int(self.video_w * scale)
+        win_h = int(self.video_h * scale)
+        cv2.resizeWindow(self.WINDOW_NAME, win_w, win_h)
 
         # 创建滑块
         cv2.createTrackbar("ROI W", self.WINDOW_NAME, self.roi_w, self.video_w, self._on_roi_w)

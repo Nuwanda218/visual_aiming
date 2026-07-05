@@ -1,268 +1,174 @@
 # V2 后续优化路线图
 
-## 当前状态
+## 阶段性总结
 
-六层架构已搭建完毕，基础流水线可端到端运行，逐帧诊断日志和 capture 层 ROI 裁切已完成。
+### 第一阶段：架构搭建（已完成 ✅）
 
-**已完成：**
-- ✅ Plan 1~3：六层架构搭建
-- ✅ P0：capture 层 ROI 裁切 + 调参窗口
-- ✅ `--verbose` 逐帧诊断日志
+从零搭建六层架构，实现最简可运行骨架。
 
----
+| 里程碑 | 内容 |
+|--------|------|
+| Plan 1~3 | 六层架构（shared/capture/perception/actuation/runtime/interaction） |
+| P0 | capture 层 ROI 裁切 + 调参窗口 |
+| P1 | OpenCV 可视化调试窗口 |
+| P2 | 瞄点选择（有头选头，无头选 person + 偏置） |
+| P3 | FPS 鼠标控制（复用 main.py 的速度追随/减速/抖动） |
+| P4 | 实时模式（热键激活 + 截屏 + 跳帧检测） |
 
-## P1：可视化调试窗口（实时流水线可视化）
-
-**问题：** 运行流水线时只有终端文字日志，无法直观看到检测效果和控制方向。后续的瞄点选择和鼠标控制都需要可视化才能有效调试。
-
-**目标：** 在流水线运行时打开 OpenCV 窗口，每帧画面上实时叠加显示检测结果和控制信息。
-
-**窗口设计：**
-```
-┌──────────────────────────────────────────────────┐
-│                                                    │
-│    [绿色框] 检测到的目标 (head)                      │
-│    [黄色框] 检测到的目标 (person)                     │
-│    [红色圆点] 瞄准点                                 │
-│    [蓝色十字] 准星位置                               │
-│    [品红箭头] 控制方向 (dx, dy)                      │
-│                                                    │
-├──────────────────────────────────────────────────┤
-│  Frame: 42/5400 | FPS: 95.2 | Det: 2 | 8.3ms     │  ← OSD 信息栏
-└──────────────────────────────────────────────────┘
-```
-
-**绘制元素：**
-
-| 元素 | 颜色 | 说明 |
-|------|------|------|
-| 检测框 (head) | 绿色 | 绘制 bbox + 标签 + 置信度 |
-| 检测框 (person) | 黄色 | 同上，颜色区分类别 |
-| 选中目标框 | 白色加粗 | 被 actuation 选中的目标，加粗边框突出 |
-| 瞄准点 | 红色圆点 | actuation 计算出的瞄准位置 |
-| 准星 | 蓝色十字线 | 画面中心 + 偏移 |
-| 控制箭头 | 品红色 | 从准星指向瞄准点，长度按 dx/dy 缩放 |
-| OSD 信息 | 白色文字 | 帧号、FPS、检测数量、管道延迟 |
-
-**操作按键：**
-
-| 键 | 功能 |
-|---|---|
-| Space | 暂停/继续播放 |
-| Q / ESC | 退出 |
-
-**CLI 入口：**
-```
-python main_v2.py --video test.mp4 --visual
-python main_v2.py --video test.mp4 --visual --verbose   ← 同时看画面和终端日志
-```
-
-**修改/新增文件：**
-
-| 文件 | 操作 | 内容 |
-|------|------|------|
-| `interaction/visualizer.py` | 新建 | OpenCV 可视化渲染器（接收 TickResult，绘制叠加层） |
-| `runtime/pipeline.py` | 修改 | tick() 返回的 TickResult 需要携带 selected 目标信息 |
-| `interaction/cli.py` | 修改 | 添加 `--visual` 参数，创建可视化观察者 |
-| `runtime/runner.py` | 修改 | 支持可选的帧回调（每帧通知可视化器） |
-
-**架构边界检查：**
-- 可视化渲染 → interaction 层（对接用户）✓
-- runner 通过回调通知，不直接依赖可视化实现 ✓
-- capture / perception / actuation 不需要任何修改 ✓
-
-**与 P0 调参窗口的区别：**
-- P0 调参窗口：静态帧预览，手动切帧，调整参数
-- P1 可视化窗口：流水线运行时实时播放，展示检测和控制效果
+**当前状态：** 基础瞄准和鼠标控制已可工作。但存在以下核心问题：
+1. 目标切换时瞄准点瞬间跳变（没有切换逻辑）
+2. 同一目标帧间检测框大小变化导致瞄准点抖动
+3. 没有目标锁定/粘性机制
 
 ---
 
-## P2：瞄点选择策略 — 有头选头，无头选 person
+## 第二阶段：控制算法优化
 
-**问题：** actuation 当前只按距离选最近目标，不区分 head 和 person 类别。同时瞄准点直接使用 detection center，对 person 框来说瞄的是躯干中心。
+**核心目标：** 解决瞄准点抖动和目标切换问题，让准星吸附效果平滑自然。
 
-**目标：** 合并原 P1（类别偏好）和 P2（瞄点偏置）为一个完整的瞄点策略。
+### 问题分析
 
-**选择规则：**
+当前瞄准点抖动有两个来源：
+
 ```
-1. 优先选 head（距离准星最近的 head）
-2. 没有 head 时选 person（距离准星最近的 person）
-3. head 的瞄准点 = 检测框中心偏上（head_bias，默认 0.35）
-4. person 的瞄准点 = 检测框顶部偏下（body_bias，默认 0.25），估算头部位置
+来源 1：帧间检测框尺寸变化
+  Frame N:   head bbox = (100, 80, 45, 60)  → aim_y = 80 + 60*0.35 = 101
+  Frame N+1: head bbox = (100, 82, 42, 55)  → aim_y = 82 + 55*0.35 = 101
+  Frame N+2: head bbox = (98, 78, 50, 68)   → aim_y = 78 + 68*0.35 = 101
+  ↑ 即使目标没动，检测框的抖动也会让瞄准点跳来跳去
+
+来源 2：目标切换跳变
+  Frame N:   选中目标 A (head, center=(150, 100))
+  Frame N+1: 目标 B (person) 突然更近 → 切换到 B (center=(300, 250))
+  ↑ 瞄准点瞬间跳 200 像素，鼠标猛甩
 ```
 
-**修改/新增文件：**
+### 行业解决方案（调研总结）
 
-| 文件 | 操作 | 内容 |
-|------|------|------|
-| `actuation/targeting.py` | 修改 | select 逻辑改为有头选头；compute_error 加偏置 |
-| `shared/config.py` | 修改 | 添加 head_bias / body_bias / head_label / person_label |
-| `tests/test_v2_actuation.py` | 修改 | 添加类别选择和偏置的测试用例 |
+经过调研 FPS 游戏瞄准辅助算法和目标追踪领域的最新实践，核心技术方案有三个层次：
 
-**架构边界检查：**
-- 目标选择 + 瞄点偏置 → actuation 层内部 ✓
-- 偏置参数 → shared/config.py ✓
-- 其他层不需要修改 ✓
+**1. 瞄准点平滑（解决检测框抖动）**
 
-**验证方式：**
-- 单元测试：有 head 和 person 同时存在时优先选 head
-- `--visual` 窗口：确认红色瞄准点在 head 框的偏上位置，而不是 center
+使用 Kalman 滤波器对瞄准点进行帧间平滑：
+- 状态向量 `[x, y, vx, vy]` — 位置 + 速度
+- 新检测结果作为观测值更新状态
+- 输出平滑后的位置估计，消除检测框尺寸抖动带来的瞄准点跳变
+- 可同时提供短期预测（领先补偿），对移动目标提前一点
+
+参考：[SORT 目标追踪](https://arxiv.org/html/2509.18451v1) 使用 Kalman 滤波器 + 匈牙利算法做检测-追踪关联，在 260Hz 下实现实时追踪。[Bounding Box Stabilization](https://www.researchgate.net/publication/358558079_Bounding_Box_Stabilization_for_Visual_Object_Tracking_Using_Kalman_and_FIR_Filters) 专门研究了用 Kalman 和 FIR 滤波器稳定检测框。
+
+**2. 目标粘性 / 切换迟滞（解决目标跳变）**
+
+参考 [Configurable Aim Assist](https://www.moddb.com/mods/stalker-anomaly/addons/configurable-aim-assist) 和 [Blood Strike 瞄准辅助](https://news.bittopup.com/news/blood-strike-aim-assist-config-pro-settings-guide-2025)：
+- **Switch Hysteresis（切换迟滞）：** 当前锁定目标有额外加分，新目标必须"明显更好"才触发切换
+- **Target ID 追踪：** 用 IOU（交叉比）匹配前后帧的检测框，判断"这还是同一个目标吗"
+- **切换冷却期：** 切换后短时间内不允许再次切换，防止在两个目标间反复跳
+
+**3. 平滑过渡（解决切换时的跳变）**
+
+参考 [Sticky Aim Assist System](https://docsbot.ai/prompts/technical/sticky-aim-assist-system) 和 [USPTO 瞄准辅助专利](https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12151161)：
+- 切换发生时不立刻跳到新目标，而是用平滑插值过渡
+- 过渡时间约 0.15 秒（Smoothness=5 的典型值）
+- 过渡曲线使用 ease-in-out（先慢后快再慢），避免机械感
+
+### 实施计划
+
+#### P5：瞄准点 Kalman 平滑
+
+**目标：** 消除帧间检测框抖动导致的瞄准点跳变。
+
+**实现方式：**
+- 新建 `actuation/aim_filter.py`，实现 `AimSmoother` 类
+- 内部用 Kalman 滤波器维护瞄准点状态 `[x, y, vx, vy]`
+- 每帧接收原始瞄准点 → 输出平滑后的瞄准点
+- 目标丢失时保持最后已知位置短暂预测（hold 机制）
+- 目标 ID 变化（切换）时重置滤波器
+
+**关键参数：**
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| process_noise | 过程噪声（越大越跟手，越小越平滑） | 0.1 |
+| measurement_noise | 观测噪声（越大越平滑，越小越跟手） | 1.0 |
+| hold_frames | 目标丢失后继续预测的帧数 | 5 |
+
+**影响范围：** actuation 层内部。新增文件，修改 Actuator。
 
 ---
 
-## P3：鼠标控制逻辑 — 直接复用已有实现
+#### P6：目标追踪 + 切换迟滞
 
-**问题：** actuation 当前直接输出原始 dx/dy 误差作为 Command，没有速度模型。如果直接用这个值移动鼠标，会出现瞬间跳变、没有惯性、没有减速。
+**目标：** 给每个检测目标分配 ID，实现粘性锁定和切换迟滞。
 
-**方案：** 直接复用 `C:\Users\Nuwanda\Desktop\main.py` 中的 MouseController 逻辑，移植到 actuation 层。不重新设计控制算法。
+**实现方式：**
+- 新建 `actuation/tracker.py`，实现 `TargetTracker` 类
+- 用 IOU 匹配前后帧检测框，分配稳定的 target_id
+- 当前锁定目标有 hysteresis 加分（比如 0.3），新目标得分必须超过 当前目标得分 + hysteresis 才切换
+- 切换冷却期：切换后 N 帧内不允许再次切换
 
-**复用内容（来自 main.py 的 MouseController）：**
-```python
-def move_mouse_fps_style(self, target_x, target_y, speed):
-    # 1. 计算当前鼠标到目标的距离和方向
-    dx = target_x - current_x
-    dy = target_y - current_y
-    dist = distance(0, 0, dx, dy)
+**关键参数：**
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| iou_threshold | IOU 低于此值认为是不同目标 | 0.3 |
+| switch_hysteresis | 切换门槛（新目标必须好多少才切换） | 0.3 |
+| switch_cooldown | 切换后冷却帧数 | 10 |
 
-    # 2. 方向加微扰（模拟人手抖动）
-    target_angle = math.atan2(dy, dx)
-    angle_deviation = random.uniform(-0.3, 0.3) * deviation_factor
-    perturbed_angle = target_angle + angle_deviation
-
-    # 3. 速度追随（加速度平滑）
-    target_vel_x = math.cos(perturbed_angle) * speed
-    self.velocity_x += (target_vel_x - self.velocity_x) * self.acceleration
-
-    # 4. 近距离减速（防止过冲）
-    if dist < speed * 3:
-        decel_factor = max(0.1, dist / (speed * 3))
-        self.velocity_x *= decel_factor
-
-    # 5. 加微抖动后移动鼠标
-    self.set_mouse_position(jx, jy)
-```
-
-**移植方式：**
-- 将 `move_mouse_fps_style()` 的核心逻辑封装为 `actuation/control.py` 中的 `FpsController` 类
-- 保留原始的速度追随、减速、抖动逻辑，不做修改
-- `Actuator.process()` 内部调用 `FpsController` 将原始误差转化为平滑移动量
-- 真实鼠标输出通过 `WinMouseOutput`（使用 `SetCursorPos`，与原文件一致）
-
-**修改/新增文件：**
-
-| 文件 | 操作 | 内容 |
-|------|------|------|
-| `actuation/control.py` | 新建 | FpsController — 直接移植 main.py 的 move_mouse_fps_style 逻辑 |
-| `actuation/targeting.py` | 修改 | Actuator 内部使用 FpsController |
-| `actuation/outputs.py` | 修改 | 新增 WinMouseOutput（SetCursorPos，需安全开关） |
-| `shared/config.py` | 修改 | 添加 speed / acceleration / jitter_intensity 参数 |
-| `tests/test_v2_actuation.py` | 修改 | FpsController 单元测试 |
-
-**架构边界检查：**
-- 速度控制器 → actuation 层内部 ✓
-- 鼠标输出 → actuation/outputs.py（OutputPort 实现）✓
-- 其他层不需要修改 ✓
-
-**验证方式：**
-- 单元测试：验证减速、死区、速度上限行为
-- `--visual` 窗口：观察控制箭头是否平滑、是否有减速效果
-- 真实鼠标测试：`--output mouse`（需安全确认）
+**影响范围：** actuation 层内部。
 
 ---
 
-## P4：实时模式 — 热键激活 + 截屏 + 流水线
+#### P7：切换平滑过渡
 
-**目标：** 从视频回放测试过渡到真正的实时截屏运行，通过热键控制激活/停用。
+**目标：** 目标切换时瞄准点不瞬间跳变，而是平滑过渡。
 
-### 热键逻辑（复用 V1）
+**实现方式：**
+- 在 `AimSmoother` 中增加切换过渡逻辑
+- 检测到 target_id 变化时，启动 0.15 秒过渡
+- 过渡期间瞄准点从旧位置平滑插值到新位置
+- 使用 ease-in-out 曲线（smoothstep）避免机械感
 
-**激活条件：** 同时按住 Shift + 右键，然后按左键
-**停用条件：** 释放 Shift 或释放右键
-**退出条件：** Ctrl+Q
-
-```
-空闲状态（不截屏、不检测、不动鼠标）
-    │
-    ├── 按住 Shift + 右键 + 左键 → 激活
-    │
-激活状态（截屏 → 检测 → 控制 → 鼠标输出）
-    │
-    ├── 释放 Shift 或 右键 → 停用，回到空闲
-    ├── Ctrl+Q → 退出程序
-```
-
-**技术实现：** pynput 键鼠监听器，独立线程，事件驱动。
-只设三个 bool 标志（shift_pressed / right_pressed / left_held），主循环每帧读取，开销为零。
-
-**归属层：** interaction 层（用户输入）。
-
-### 运行模型（方案 B — 单线程 + 跳帧检测）
-
-```
-主循环（目标 ~120fps）:
-    frame = capture.read()                    # 截屏 ~2ms
-
-    if 到了检测时间 (每 1/30 秒):
-        detections = detector.detect(frame)   # YOLO ~10ms
-    else:
-        复用上次 detections                    # ~0ms
-
-    command = actuator.process(detections)     # 选目标+瞄点+FPS控制 <0.1ms
-    output.apply(command)                      # SendInput 鼠标移动 <0.1ms
-```
-
-检测帧 ~12ms，跳过帧 ~2ms，平均 ~4.5ms/帧（~220fps 鼠标输出，30fps 检测）。
-FpsController 的速度状态在跳帧时持续输出，鼠标移动不中断。
-
-**归属层：** runtime 层（调度决策）。
-
-**修改/新增文件：**
-
-| 文件 | 操作 | 内容 |
-|------|------|------|
-| `interaction/hotkey.py` | 新建 | pynput 热键监听（复用 V1 的 WakeUpModule 逻辑） |
-| `capture/sources.py` | 修改 | 新增 ScreenCapture（mss 截屏 + ROI 裁切） |
-| `runtime/realtime.py` | 新建 | 实时运行循环（方案 B 跳帧逻辑） |
-| `interaction/cli.py` | 修改 | 新增 `--realtime` 模式入口 |
+**影响范围：** actuation/aim_filter.py 内部增强。
 
 ---
 
-## 执行顺序
+### 执行顺序
 
 ```
-P1 可视化调试窗口    ← 已完成 ✅
+P5 瞄准点 Kalman 平滑    ← 先消除帧间抖动
     ↓
-P2 瞄点选择策略      ← 已完成 ✅
+P6 目标追踪 + 切换迟滞   ← 稳定目标 ID，防止不必要切换
     ↓
-P3 鼠标控制逻辑      ← 已完成 ✅
-    ↓
-P4 实时模式          ← 热键 + 截屏 + 实时运行循环
+P7 切换平滑过渡          ← 必要切换时平滑过渡
 ```
+
+三个优化逐步叠加：P5 让同一目标的瞄准点稳定，P6 让目标不乱切，P7 让必要切换也不跳变。
+
+### 验证方式
+
+- `--visual` 窗口：观察红色瞄准点是否稳定（P5）、是否频繁跳目标（P6）、切换时是否平滑（P7）
+- `--verbose` 日志：检查 SELECT 行的 target_id 变化频率
+- 实时测试：`--realtime --output mouse --visual`，实际感受吸附效果
+
+---
 
 ## 最终目标
 
 **准星吸附效果：** 实时截屏检测敌人位置，平滑移动鼠标使准星吸附在敌人身上。
 
-这个效果由三层协作产生：
-
-```
-perception  →  多久看一次、看到了谁      →  决定"反应速度"
-actuation   →  瞄哪里、怎么移过去        →  决定"吸附手感"
-runtime     →  多久做一次决策、跳不跳帧   →  决定"平滑度"
-```
-
 | 感受 | 由谁决定 | 怎么调 |
 |------|---------|--------|
 | 反应快慢 | runtime 检测频率 | detect_fps |
 | 移动平滑度 | actuation FpsController | acceleration, speed |
+| 瞄准点稳定性 | actuation AimSmoother (P5) | process_noise, measurement_noise |
+| 目标锁定稳定性 | actuation TargetTracker (P6) | switch_hysteresis, cooldown |
+| 切换自然度 | actuation 切换过渡 (P7) | transition_time |
 | 是否过冲 | actuation 减速逻辑 | decel 参数 |
-| 目标切换跳变 | actuation 目标选择 | 粘性、切换阈值（后续加） |
 | 整体延迟 | runtime 主循环频率 | 主循环 fps |
 
-各层独立可调，通过实际测试效果来迭代参数，不需要提前确定最优值。
+各层独立可调，通过 `--visual` 窗口实时观察效果来迭代参数。
 
 ## 执行原则
 
 - 每个优化项独立完成、独立测试、独立提交
 - 修改前先用 `--verbose` 日志确认问题，修改后用 `--visual` 窗口验证效果
 - 遵守架构边界：每个优化只影响对应的层，不跨层修改
+- 所有新增算法都在 actuation 层内部，不改变层间协议

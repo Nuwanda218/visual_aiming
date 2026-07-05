@@ -27,8 +27,10 @@ class Actuator:
     """把 Detection 序列转换为 Command，当前不直接执行任何系统鼠标动作。"""
 
     def __init__(self, config: Config) -> None:
-        # V2 初始阶段默认准星在处理图像中心，后续可替换为真实准星来源。
-        self.crosshair = (config.image_width // 2, config.image_height // 2)
+        # 准星 = ROI 中心 + 偏移量，偏移量默认为 0
+        offset_x = getattr(config, "crosshair_offset_x", 0)
+        offset_y = getattr(config, "crosshair_offset_y", 0)
+        self.crosshair = (config.image_width // 2 + offset_x, config.image_height // 2 + offset_y)
 
     def process(self, detections: Sequence[Detection]) -> Command:
         selected = select_nearest(detections, self.crosshair)

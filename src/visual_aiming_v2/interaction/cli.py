@@ -14,6 +14,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-frames", type=int, default=0, help="最多处理帧数，0 表示全部")
     parser.add_argument("--config", default="config.json", help="配置文件路径")
     parser.add_argument("--verbose", action="store_true", help="启用逐帧诊断日志输出")
+    parser.add_argument("--tune", choices=["capture"], default="", help="进入调参模式（目前支持 capture）")
     return parser.parse_args(argv)
 
 
@@ -28,6 +29,13 @@ def load_config_file(path: str) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+
+    # 调参模式：不跑流水线，打开调参窗口
+    if args.tune == "capture":
+        from visual_aiming_v2.interaction.tuner import CaptureTuner
+        tuner = CaptureTuner(args.video, config_path=args.config)
+        tuner.run()
+        return 0
 
     # 真实运行依赖在 main 内部导入，避免 parse_args/load_config_file 的测试加载重依赖。
     from visual_aiming_v2.actuation.outputs import LogOutput, NullOutput
@@ -46,10 +54,12 @@ def main(argv: list[str] | None = None) -> int:
         device=str(file_config.get("device", "auto")),
         image_width=int(file_config.get("image_width", 410)),
         image_height=int(file_config.get("image_height", 315)),
+        crosshair_offset_x=int(file_config.get("crosshair_offset_x", 0)),
+        crosshair_offset_y=int(file_config.get("crosshair_offset_y", 0)),
     )
 
     # 组装各层组件
-    capture = VideoFileCapture(args.video)
+    capture = VideoFileCapture(args.video, config)
     detector = YoloDetector(config)
     actuator = Actuator(config)
     # 初始阶段只允许 null/log 两种安全输出，真实鼠标输出应在后续任务显式加入。

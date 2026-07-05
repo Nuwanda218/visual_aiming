@@ -1,8 +1,10 @@
+"""图像获取层 — 帧获取与预处理。"""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Iterable, Optional
 
+from visual_aiming_v2.shared.config import Config
 from visual_aiming_v2.shared.schemas import Frame
 
 
@@ -26,28 +28,54 @@ class MemoryCapture:
 
 
 class VideoFileCapture:
-    """真实视频文件输入源，把 cv2 的帧读取结果包装成统一 Frame。"""
+    """真实视频文件输入源，读取视频帧并裁切 ROI 区域。
 
-    def __init__(self, video_path: str | Path) -> None:
-        # 延迟导入 cv2，让不需要视频功能的测试不被 OpenCV 依赖阻塞。
+    ROI 以视频画面中心为基准，裁切 config.image_width × config.image_height 的区域。
+    裁切后的画面中心即准星默认位置。
+    """
+
+    def __init__(self, video_path: str | Path, config: Optional[Config] = None) -> None:
         import cv2
 
+        self._cv2 = cv2
         self.path = Path(video_path)
         self.capture = cv2.VideoCapture(str(self.path))
         if not self.capture.isOpened():
             raise FileNotFoundError(f"无法打开视频: {self.path}")
+
+        # 读取视频基本信息
         fps = self.capture.get(cv2.CAP_PROP_FPS)
-        # 某些视频读不到 FPS，退回 30 FPS，保证 timestamp 仍然单调递增。
         self._frame_dt = 1.0 / fps if fps and fps > 0 else 1.0 / 30.0
         self._sequence = 0
+        self.video_width = int(self.capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.video_height = int(self.capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.total_frames = int(self.capture.get(cv2.CAP_PROP_FRAME_COUNT))
+
+        # 计算 ROI 裁切参数（以画面中心为基准）
+        if config is not None:
+            self._roi_w = min(config.image_width, self.video_width)
+            self._roi_h = min(config.image_height, self.video_height)
+        else:
+            # 没有 config 时不裁切，输出原始尺寸
+            self._roi_w = self.video_width
+            self._roi_h = self.video_height
+        self._roi_left = (self.video_width - self._roi_w) // 2
+        self._roi_top = (self.video_height - self._roi_h) // 2
 
     def read(self) -> Optional[Frame]:
         ok, image = self.capture.read()
         if not ok:
             return None
+
+        # ROI 裁切：从画面中心取固定尺寸区域
+        cropped = image[
+            self._roi_top : self._roi_top + self._roi_h,
+            self._roi_left : self._roi_left + self._roi_w,
+        ]
+
         seq = self._sequence
         self._sequence += 1
-        return Frame(image=image, sequence=seq, timestamp=seq * self._frame_dt)
+        return Frame(image=cropped, sequence=seq, timestamp=seq * self._frame_dt)
 
     def close(self) -> None:
         self.capture.release()

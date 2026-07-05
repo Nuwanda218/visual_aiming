@@ -98,6 +98,13 @@ def _run_realtime(args) -> int:
     hotkey = HotkeyListener()
     hotkey.start()
 
+    # 可视化窗口（--visual 开启）
+    on_tick = None
+    if args.visual:
+        from visual_aiming_v2.interaction.visualizer import Visualizer
+        vis = Visualizer(crosshair=actuator.crosshair, total_frames=0)
+        on_tick = lambda frame, result: vis.update(frame.image, result)
+
     try:
         run_realtime(
             capture=capture,
@@ -105,6 +112,7 @@ def _run_realtime(args) -> int:
             actuator=actuator,
             output=output,
             hotkey=hotkey,
+            on_tick=on_tick,
         )
     finally:
         hotkey.stop()

@@ -54,8 +54,28 @@ class YoloDetector:
         return detections
 
     def _load_model(self) -> None:
+        """加载 YOLO 模型并打印设备信息。"""
         from ultralytics import YOLO
+        import torch
 
+        # 检测 CUDA 可用性
+        cuda_available = torch.cuda.is_available()
+        if cuda_available:
+            gpu_name = torch.cuda.get_device_name(0)
+            cuda_version = torch.version.cuda
+            print(f"[YOLO] CUDA 已启用 | GPU: {gpu_name} | CUDA: {cuda_version}")
+        else:
+            print("[YOLO] CUDA 不可用，使用 CPU 推理")
+
+        # 加载模型
+        print(f"[YOLO] 加载模型: {self.config.model_path} | device={self.config.device}")
         self._model = YOLO(self.config.model_path)
-        if self.config.device != "auto":
-            self._model.to(self.config.device)
+
+        # 设备分配
+        if self.config.device == "auto":
+            runtime_device = "cuda:0" if cuda_available else "cpu"
+        else:
+            runtime_device = self.config.device
+        self._model.to(runtime_device)
+
+        print(f"[YOLO] 模型已加载 | 运行设备: {runtime_device}")

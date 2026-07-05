@@ -18,12 +18,14 @@ def run(
     pipeline = Pipeline(detector=detector, actuator=actuator, output=output, diagnostics=diagnostics)
     results: list[TickResult] = []
     try:
+        # runner 只负责生命周期和循环边界，不参与检测、选点、输出细节。
         while max_frames is None or len(results) < max_frames:
             frame = capture.read()
             if frame is None:
                 break
             results.append(pipeline.tick(frame))
     finally:
+        # finally 保证中途异常时也释放输入源和输出端资源。
         capture.close()
         output.close()
     return results

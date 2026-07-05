@@ -29,6 +29,7 @@ def load_config_file(path: str) -> dict:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
 
+    # 真实运行依赖在 main 内部导入，避免 parse_args/load_config_file 的测试加载重依赖。
     from visual_aiming_v2.actuation.outputs import LogOutput, NullOutput
     from visual_aiming_v2.actuation.targeting import Actuator
     from visual_aiming_v2.capture.sources import VideoFileCapture
@@ -51,6 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     capture = VideoFileCapture(args.video)
     detector = YoloDetector(config)
     actuator = Actuator(config)
+    # 初始阶段只允许 null/log 两种安全输出，真实鼠标输出应在后续任务显式加入。
     output = LogOutput() if args.output == "log" else NullOutput()
     max_frames = args.max_frames if args.max_frames > 0 else None
 

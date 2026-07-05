@@ -10,6 +10,8 @@ from visual_aiming_v2.shared.schemas import Detection, Frame, TickResult
 
 
 class Pipeline:
+    """单帧流水线：负责调用各层组件，但不持有具体实现细节。"""
+
     def __init__(
         self,
         detector: DetectorPort,
@@ -17,6 +19,7 @@ class Pipeline:
         output: OutputPort,
         diagnostics=None,  # 可选的 DiagnosticLogger 实例
     ) -> None:
+        # 这里依赖的是 shared.ports 里的协议，因此测试替身和真实组件可互换。
         self.detector = detector
         self.actuator = actuator
         self.output = output
@@ -58,6 +61,7 @@ class Pipeline:
             return None
         crosshair = getattr(self.actuator, "crosshair", None)
         if crosshair is None:
+            # 若未来换成不暴露 crosshair 的 actuator，诊断层仍保持可用。
             return detections[0] if detections else None
         # 选距离 crosshair 最近的（与 actuation 逻辑一致）
         cx, cy = crosshair
@@ -89,6 +93,7 @@ class Pipeline:
         # 获取图像形状
         image = frame.image
         if hasattr(image, "shape"):
+            # OpenCV/numpy 图像通常带 shape: (height, width, channels)。
             image_shape = image.shape
         else:
             image_shape = (0, 0, 0)

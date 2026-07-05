@@ -29,6 +29,7 @@ class DiagnosticLogger:
         pipeline_ms: float,
     ) -> None:
         """格式化并打印一帧的完整诊断信息。"""
+        # diagnostics 只观察数据，不反向影响 pipeline 的决策结果。
         lines: list[str] = []
 
         # 帧头（双线框）

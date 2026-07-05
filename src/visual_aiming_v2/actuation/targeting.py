@@ -8,6 +8,8 @@ from visual_aiming_v2.shared.schemas import Command, Detection, Point
 
 
 def select_nearest(detections: Sequence[Detection], crosshair: Point) -> Optional[Detection]:
+    """选择距离准星最近的目标，作为当前最小可用目标选择策略。"""
+
     if not detections:
         return None
     cx, cy = crosshair
@@ -15,12 +17,17 @@ def select_nearest(detections: Sequence[Detection], crosshair: Point) -> Optiona
 
 
 def compute_error(detection: Detection, crosshair: Point) -> tuple[int, int]:
+    """计算目标中心相对准星的偏移量，正负号直接表达移动方向。"""
+
     cx, cy = detection.center
     return (cx - crosshair[0], cy - crosshair[1])
 
 
 class Actuator:
+    """把 Detection 序列转换为 Command，当前不直接执行任何系统鼠标动作。"""
+
     def __init__(self, config: Config) -> None:
+        # V2 初始阶段默认准星在处理图像中心，后续可替换为真实准星来源。
         self.crosshair = (config.image_width // 2, config.image_height // 2)
 
     def process(self, detections: Sequence[Detection]) -> Command:

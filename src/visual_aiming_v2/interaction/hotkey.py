@@ -1,6 +1,6 @@
 """交互接入层 — 全局热键监听（pynput 事件驱动）。
 
-激活条件：同时按住 Shift + 右键，然后按左键
+激活条件：按住 Shift + 右键
 停用条件：释放 Shift 或释放右键
 退出条件：Ctrl+Q
 
@@ -42,7 +42,7 @@ class HotkeyListener:
         """启动键鼠监听。"""
         self._kb_listener.start()
         self._mouse_listener.start()
-        print(f"[{time.strftime('%H:%M:%S')}] 热键监听已启动 | Shift+右键+左键=激活 | Ctrl+Q=退出")
+        print(f"[{time.strftime('%H:%M:%S')}] 热键监听已启动 | Shift+右键=激活 | Ctrl+Q=退出")
 
     def stop(self) -> None:
         """停止键鼠监听。"""
@@ -90,14 +90,13 @@ class HotkeyListener:
     def _on_mouse_click(self, x, y, button, pressed) -> None:
         try:
             with self._lock:
-                if button == mouse.Button.left:
-                    self._left_held = pressed
-                    if pressed and self._shift_pressed and self._right_pressed and not self._active:
-                        self._active = True
-                        print(f"[{time.strftime('%H:%M:%S')}] 辅助已激活")
-                elif button == mouse.Button.right:
+                if button == mouse.Button.right:
                     if pressed:
                         self._right_pressed = True
+                        # Shift + 右键 → 激活
+                        if self._shift_pressed and not self._active:
+                            self._active = True
+                            print(f"[{time.strftime('%H:%M:%S')}] 辅助已激活")
                     else:
                         self._right_pressed = False
                         if self._active:

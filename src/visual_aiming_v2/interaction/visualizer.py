@@ -55,13 +55,15 @@ class Visualizer:
         cv2.drawMarker(display, (cx, cy), _CROSSHAIR_COLOR, cv2.MARKER_CROSS, 24, 2)
 
         # 绘制瞄准点和控制箭头
-        if result.selected is not None:
-            ax, ay = result.selected.center
+        cmd = result.command
+        if result.selected is not None and cmd.mode == "relative":
+            # 瞄准点 = 准星 + 误差（dx, dy）
+            ax = cx + cmd.dx
+            ay = cy + cmd.dy
             cv2.circle(display, (ax, ay), 5, _AIM_COLOR, -1)
 
             # 控制箭头（从准星指向瞄准点）
-            cmd = result.command
-            if cmd.mode == "relative" and (cmd.dx != 0 or cmd.dy != 0):
+            if cmd.dx != 0 or cmd.dy != 0:
                 scale = 3.0
                 end_x = int(cx + cmd.dx * scale)
                 end_y = int(cy + cmd.dy * scale)

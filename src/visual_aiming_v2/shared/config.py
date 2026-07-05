@@ -20,3 +20,9 @@ class Config:
     # actuation 层 — 准星偏移（相对于 ROI 中心）
     crosshair_offset_x: int = 0
     crosshair_offset_y: int = 0
+
+    # actuation 层 — 瞄点选择
+    head_label: str = "head"       # head 类别标签名
+    person_label: str = "person"   # person 类别标签名
+    head_bias: float = 0.35        # head 框瞄准点垂直偏置（0=顶部, 0.5=中心, 1=底部）
+    body_bias: float = 0.25        # person 框瞄准点垂直偏置（偏上估算头部位置）

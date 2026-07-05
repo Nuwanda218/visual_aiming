@@ -35,8 +35,8 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(result.command.reason, "no_target")
 
     def test_selects_nearest_and_produces_relative_command(self):
-        far = Detection(x=200, y=200, w=20, h=20, confidence=0.9)
-        near = Detection(x=92, y=82, w=20, h=20, confidence=0.8)
+        far = Detection(x=200, y=200, w=20, h=20, confidence=0.9, label="head")
+        near = Detection(x=92, y=82, w=20, h=20, confidence=0.8, label="head")
         pipeline = self._make_pipeline([far, near])
         frame = Frame(image="img", sequence=1, timestamp=0.1)
 
@@ -44,7 +44,8 @@ class PipelineTests(unittest.TestCase):
 
         self.assertEqual(result.command.mode, "relative")
         self.assertEqual(result.command.dx, 2)
-        self.assertEqual(result.command.dy, -8)
+        # head_bias=0.35: aim_y = 82 + int(20*0.35) = 89, crosshair_y = 100, dy = -11
+        self.assertEqual(result.command.dy, -11)
 
     def test_output_receives_command(self):
         det = Detection(x=110, y=95, w=10, h=10, confidence=0.9)

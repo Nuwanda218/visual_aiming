@@ -8,6 +8,7 @@ from visual_aiming_v2.shared.config import Config
 from visual_aiming_v2.shared.schemas import Command, Detection, Point
 from visual_aiming_v2.actuation.control import FpsController
 from visual_aiming_v2.actuation.aim_filter import AimSmoother
+from visual_aiming_v2.actuation.tracker import TargetTracker
 
 
 def select_target(
@@ -60,7 +61,7 @@ class Actuator:
     """把 Detection 序列转换为 Command。
 
     内部流水线：
-    select_target → compute_aim_point → AimSmoother(P5) → compute_error → FpsController → Command
+    TargetTracker(P6) → compute_aim_point → AimSmoother(P5) → compute_error → FpsController → Command
     """
 
     def __init__(self, config: Config, use_controller: bool = False) -> None:
@@ -74,6 +75,11 @@ class Actuator:
         self.person_label = getattr(config, "person_label", "person")
         self.head_bias = getattr(config, "head_bias", 0.35)
         self.body_bias = getattr(config, "body_bias", 0.25)
+
+        # P6: 目标锁定器
+        self.tracker = TargetTracker(
+            iou_threshold=getattr(config, "tracker_iou_threshold", 0.3),
+        )
 
         # P5: 瞄准点 Kalman 平滑
         self.smoother = AimSmoother(
@@ -92,8 +98,9 @@ class Actuator:
             )
 
     def process(self, detections: Sequence[Detection]) -> Command:
-        # 有头选头，无头选 person
-        selected = select_target(detections, self.crosshair, self.head_label, self.person_label)
+        # P6: 目标锁定（只在目标消失时被动切换）
+        select_fn = lambda dets, ch: select_target(dets, ch, self.head_label, self.person_label)
+        selected = self.tracker.update(detections, self.crosshair, select_fn)
 
         if selected is not None:
             # 计算原始瞄准点（带偏置）

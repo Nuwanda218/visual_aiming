@@ -143,6 +143,77 @@ class AimSmootherTests(unittest.TestCase):
         result = smoother.smooth((200, 200))
         self.assertEqual(result, (200, 200))
 
+
+from visual_aiming_v2.actuation.tracker import TargetTracker, compute_iou
+
+
+class ComputeIouTests(unittest.TestCase):
+    def test_identical_boxes(self):
+        a = Detection(x=100, y=100, w=50, h=50, confidence=0.9)
+        self.assertAlmostEqual(compute_iou(a, a), 1.0)
+
+    def test_no_overlap(self):
+        a = Detection(x=0, y=0, w=50, h=50, confidence=0.9)
+        b = Detection(x=200, y=200, w=50, h=50, confidence=0.9)
+        self.assertAlmostEqual(compute_iou(a, b), 0.0)
+
+    def test_partial_overlap(self):
+        a = Detection(x=0, y=0, w=100, h=100, confidence=0.9)
+        b = Detection(x=50, y=50, w=100, h=100, confidence=0.9)
+        iou = compute_iou(a, b)
+        self.assertGreater(iou, 0.0)
+        self.assertLess(iou, 1.0)
+
+
+class TargetTrackerTests(unittest.TestCase):
+    def _select(self, dets, crosshair):
+        import math
+        if not dets:
+            return None
+        cx, cy = crosshair
+        return min(dets, key=lambda d: math.hypot(d.center[0] - cx, d.center[1] - cy))
+
+    def test_locks_nearest_initially(self):
+        tracker = TargetTracker()
+        far = Detection(x=200, y=200, w=20, h=20, confidence=0.9)
+        near = Detection(x=95, y=95, w=20, h=20, confidence=0.8)
+        result = tracker.update([far, near], (100, 100), self._select)
+        self.assertEqual(result, near)
+
+    def test_keeps_locked_target_with_iou(self):
+        tracker = TargetTracker()
+        det1 = Detection(x=100, y=100, w=50, h=50, confidence=0.9)
+        tracker.update([det1], (100, 100), self._select)
+        det2 = Detection(x=105, y=102, w=48, h=50, confidence=0.9)
+        result = tracker.update([det2], (100, 100), self._select)
+        self.assertEqual(result, det2)
+        self.assertEqual(tracker.locked_frames, 2)
+
+    def test_ignores_closer_new_target(self):
+        tracker = TargetTracker()
+        original = Detection(x=150, y=150, w=50, h=50, confidence=0.9)
+        tracker.update([original], (100, 100), self._select)
+        original_moved = Detection(x=152, y=148, w=50, h=50, confidence=0.9)
+        closer = Detection(x=95, y=95, w=20, h=20, confidence=0.9)
+        result = tracker.update([original_moved, closer], (100, 100), self._select)
+        self.assertEqual(result, original_moved)
+
+    def test_switches_when_target_disappears(self):
+        tracker = TargetTracker()
+        target_a = Detection(x=100, y=100, w=50, h=50, confidence=0.9)
+        target_b = Detection(x=200, y=200, w=30, h=30, confidence=0.8)
+        tracker.update([target_a, target_b], (100, 100), self._select)
+        result = tracker.update([target_b], (100, 100), self._select)
+        self.assertEqual(result, target_b)
+
+    def test_returns_none_when_all_gone(self):
+        tracker = TargetTracker()
+        det = Detection(x=100, y=100, w=50, h=50, confidence=0.9)
+        tracker.update([det], (100, 100), self._select)
+        result = tracker.update([], (100, 100), self._select)
+        self.assertIsNone(result)
+
+
 class NullOutputTests(unittest.TestCase):
     def test_apply_does_nothing(self):
         output = NullOutput()

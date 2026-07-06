@@ -36,3 +36,6 @@ class Config:
     smooth_process_noise: float = 0.1   # 过程噪声（越大越跟手，越小越平滑）
     smooth_measurement_noise: float = 1.0  # 观测噪声（越大越平滑，越小越跟手）
     smooth_hold_frames: int = 5         # 目标丢失后继续预测的帧数
+
+    # actuation 层 — 目标锁定（IOU 追踪）
+    tracker_iou_threshold: float = 0.3  # IOU 低于此值认为目标消失

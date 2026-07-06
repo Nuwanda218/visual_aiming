@@ -30,5 +30,4 @@ class Config:
     # actuation 层 — FPS 鼠标控制
     control_speed: float = 100.0        # 移动速度
     control_acceleration: float = 0.3   # 速度追随系数（0~1，越大越跟手）
-    control_jitter: float = 0.5         # 抖动强度（模拟人手微颤）
-    control_deadzone: float = 0.1       # 误差死区（像素）
+    control_deadzone: float = 2.0       # 误差死区（像素，小于此值停止输出）

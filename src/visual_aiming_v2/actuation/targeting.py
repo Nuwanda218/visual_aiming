@@ -79,8 +79,7 @@ class Actuator:
             self.controller = FpsController(
                 speed=getattr(config, "control_speed", 100.0),
                 acceleration=getattr(config, "control_acceleration", 0.3),
-                jitter_intensity=getattr(config, "control_jitter", 0.5),
-                deadzone=getattr(config, "control_deadzone", 0.1),
+                deadzone=getattr(config, "control_deadzone", 2.0),
             )
 
     def process(self, detections: Sequence[Detection]) -> Command:

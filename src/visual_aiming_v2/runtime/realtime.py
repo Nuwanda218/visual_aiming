@@ -66,6 +66,8 @@ def run_realtime(
                     detections=detections,
                     selected=selected,
                     command=command,
+                    raw_aim=getattr(actuator, "last_raw_aim", None),
+                    smoothed_aim=getattr(actuator, "last_smoothed_aim", None),
                 )
                 should_continue = on_tick(frame, result)
                 if should_continue is False:

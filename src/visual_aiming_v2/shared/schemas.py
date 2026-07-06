@@ -54,3 +54,5 @@ class TickResult:
     detections: Sequence[Detection]
     selected: Optional[Detection]
     command: Command
+    raw_aim: Optional[Point] = None
+    smoothed_aim: Optional[Point] = None

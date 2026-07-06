@@ -99,6 +99,8 @@ class Actuator:
                 speed=config.control.speed,
                 acceleration=config.control.acceleration,
                 deadzone=config.control.deadzone,
+                near_radius=config.control.near_radius,
+                near_speed_scale=config.control.near_speed_scale,
             )
 
         # 最近一次 process 的中间状态（供诊断日志读取）

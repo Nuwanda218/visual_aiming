@@ -10,6 +10,7 @@ if str(SRC_ROOT) not in sys.path:
 from visual_aiming_v2.shared.schemas import Command, Detection
 from visual_aiming_v2.shared.config import Config
 from visual_aiming_v2.actuation.targeting import Actuator, select_target, compute_aim_point, compute_error
+from visual_aiming_v2.actuation.control import FpsController
 
 
 class SelectTargetTests(unittest.TestCase):
@@ -255,6 +256,40 @@ class TargetTrackerTests(unittest.TestCase):
         result = tracker.update([], (100, 100), self._select)
         self.assertIsNone(result)
         self.assertIsNone(tracker.locked_target)
+
+
+class FpsControllerTests(unittest.TestCase):
+    def test_controller_uses_configured_near_radius_instead_of_speed_multiplier(self):
+        controller = FpsController(
+            speed=100.0,
+            acceleration=1.0,
+            deadzone=0.0,
+            near_radius=20.0,
+            near_speed_scale=0.35,
+        )
+
+        dx, dy = controller.update(50.0, 0.0)
+
+        self.assertEqual((dx, dy), (100, 0))
+
+    def test_controller_higher_speed_and_acceleration_outputs_larger_step(self):
+        slow = FpsController(speed=80.0, acceleration=0.2, deadzone=0.0, near_radius=0.0)
+        fast = FpsController(speed=180.0, acceleration=0.6, deadzone=0.0, near_radius=0.0)
+
+        slow_dx, _ = slow.update(100.0, 0.0)
+        fast_dx, _ = fast.update(100.0, 0.0)
+
+        self.assertGreater(fast_dx, slow_dx)
+
+    def test_controller_deadzone_suppresses_small_stationary_error(self):
+        controller = FpsController(speed=180.0, acceleration=0.6, deadzone=3.0)
+        controller.update(50.0, 0.0)
+
+        dx, dy = controller.update(2.0, 0.0)
+
+        self.assertEqual((dx, dy), (0, 0))
+        self.assertEqual(controller.velocity_x, 0.0)
+        self.assertEqual(controller.velocity_y, 0.0)
 
 
 class NullOutputTests(unittest.TestCase):

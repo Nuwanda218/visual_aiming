@@ -19,13 +19,17 @@ class FpsController:
 
     def __init__(
         self,
-        speed: float = 100.0,
-        acceleration: float = 0.3,
-        deadzone: float = 2.0,
+        speed: float = 180.0,
+        acceleration: float = 0.45,
+        deadzone: float = 3.0,
+        near_radius: float = 80.0,
+        near_speed_scale: float = 0.35,
     ) -> None:
         self.speed = speed
         self.acceleration = acceleration
         self.deadzone = deadzone
+        self.near_radius = near_radius
+        self.near_speed_scale = near_speed_scale
         # 内部速度状态
         self.velocity_x = 0.0
         self.velocity_y = 0.0
@@ -47,18 +51,22 @@ class FpsController:
         # 计算目标方向
         target_angle = math.atan2(error_y, error_x)
 
+        # 近距离减速：由 near_radius 显式控制，不再使用 speed * 3 隐式放大减速区
+        speed_scale = 1.0
+        near_radius = max(0.0, float(self.near_radius))
+        if near_radius > 0.0 and dist < near_radius:
+            ratio = max(0.0, min(1.0, dist / near_radius))
+            near_scale = max(0.0, min(1.0, float(self.near_speed_scale)))
+            speed_scale = near_scale + (1.0 - near_scale) * ratio
+
         # 目标速度
-        target_vel_x = math.cos(target_angle) * self.speed
-        target_vel_y = math.sin(target_angle) * self.speed
+        target_speed = max(0.0, float(self.speed)) * speed_scale
+        target_vel_x = math.cos(target_angle) * target_speed
+        target_vel_y = math.sin(target_angle) * target_speed
 
         # 速度追随（加速度平滑）
-        self.velocity_x += (target_vel_x - self.velocity_x) * self.acceleration
-        self.velocity_y += (target_vel_y - self.velocity_y) * self.acceleration
-
-        # 近距离减速（防止过冲）
-        if dist < self.speed * 3:
-            decel_factor = max(0.1, dist / (self.speed * 3))
-            self.velocity_x *= decel_factor
-            self.velocity_y *= decel_factor
+        acceleration = max(0.0, min(1.0, float(self.acceleration)))
+        self.velocity_x += (target_vel_x - self.velocity_x) * acceleration
+        self.velocity_y += (target_vel_y - self.velocity_y) * acceleration
 
         return (int(round(self.velocity_x)), int(round(self.velocity_y)))

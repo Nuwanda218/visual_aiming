@@ -60,9 +60,9 @@ class SmoothingConfig:
 class ControlConfig:
     """actuation 层 — FPS 鼠标速度控制参数。"""
 
-    speed: float = 100.0
-    acceleration: float = 0.3
-    deadzone: float = 2.0
+    speed: float = 180.0
+    acceleration: float = 0.45
+    deadzone: float = 3.0
     near_radius: float = 80.0
     near_speed_scale: float = 0.35
 

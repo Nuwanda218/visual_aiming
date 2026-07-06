@@ -32,9 +32,9 @@
     "hold_frames": 3
   },
   "control": {
-    "speed": 100.0,
-    "acceleration": 0.3,
-    "deadzone": 2.0,
+    "speed": 180.0,
+    "acceleration": 0.45,
+    "deadzone": 3.0,
     "near_radius": 80.0,
     "near_speed_scale": 0.35
   },

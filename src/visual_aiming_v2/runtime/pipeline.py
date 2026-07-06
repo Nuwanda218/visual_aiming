@@ -40,6 +40,8 @@ class Pipeline:
             detections=detections,
             selected=selected,
             command=command,
+            raw_aim=getattr(self.actuator, "last_raw_aim", None),
+            smoothed_aim=getattr(self.actuator, "last_smoothed_aim", None),
         )
 
         if self.diagnostics is not None:

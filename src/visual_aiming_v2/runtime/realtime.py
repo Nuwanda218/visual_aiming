@@ -58,12 +58,8 @@ def run_realtime(
 
             # 可视化回调
             if on_tick is not None:
-                # 找出被选中的目标（与 Actuator 逻辑一致）
-                from visual_aiming_v2.actuation.targeting import select_target
-                crosshair = getattr(actuator, "crosshair", (0, 0))
-                head_label = getattr(actuator, "head_label", "head")
-                person_label = getattr(actuator, "person_label", "person")
-                selected = select_target(detections, crosshair, head_label, person_label)
+                tracker = getattr(actuator, "tracker", None)
+                selected = getattr(tracker, "locked_target", None) if tracker is not None else None
 
                 result = TickResult(
                     frame=frame,

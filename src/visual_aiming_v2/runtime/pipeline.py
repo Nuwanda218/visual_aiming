@@ -86,6 +86,9 @@ class Pipeline:
             tracker_info = {
                 "locked_frames": tracker.locked_frames,
                 "has_lock": tracker.locked_target is not None,
+                "lost_frames": getattr(tracker, "lost_frames", 0),
+                "switched": getattr(tracker, "switched", False),
+                "has_measurement": getattr(tracker, "has_measurement_this_frame", False),
             }
 
         # P5 平滑状态

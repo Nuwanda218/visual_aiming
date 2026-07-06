@@ -79,8 +79,15 @@ class Actuator:
         self.head_bias = targeting.head_bias
         self.body_bias = targeting.body_bias
 
-        # P6: 目标锁定器（Step 4 会替换为 Detection 框匹配）
-        self.tracker = TargetTracker()
+        # P6: 目标锁定器（Detection 框匹配 + 被动切换）
+        tracker = config.tracker
+        self.tracker = TargetTracker(
+            match_distance_ratio=tracker.match_distance_ratio,
+            min_match_distance=tracker.min_match_distance,
+            size_ratio_min=tracker.size_ratio_min,
+            size_ratio_max=tracker.size_ratio_max,
+            lost_frame_grace=tracker.lost_frame_grace,
+        )
 
         # P5: 当前仍保留已有 Kalman，Step 5 先诊断再决定是否替换
         self.smoother = AimSmoother(hold_frames=config.smoothing.hold_frames)
@@ -103,7 +110,12 @@ class Actuator:
         select_fn = lambda dets, ch: select_target(dets, ch, self.head_label, self.person_label)
         selected = self.tracker.update(detections, self.crosshair, select_fn)
 
-        if selected is not None:
+        if self.tracker.switched:
+            self.smoother.reset()
+            if self.controller is not None:
+                self.controller.reset()
+
+        if selected is not None and self.tracker.has_measurement_this_frame:
             raw_aim = compute_aim_point(selected, self.head_label, self.head_bias, self.body_bias)
         else:
             raw_aim = None

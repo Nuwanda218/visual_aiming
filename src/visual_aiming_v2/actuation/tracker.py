@@ -1,38 +1,68 @@
-"""控制执行层 — 目标锁定器（IOU 匹配 + 被动切换）。
+"""控制执行层 — 目标锁定器（Detection 框匹配 + 被动切换）。
 
-锁定当前瞄准的目标，只要它还在就不切换。
-只有当锁定目标从检测中消失（IOU 匹配不上）时，才被动切换到下一个最近的目标。
+锁定当前瞄准的目标，只要当前帧还能找到与上一锁定 Detection
+中心位置和尺寸相近的框，就继续锁定。只有锁定框确认消失后，
+才被动切换到下一个目标。
 """
 from __future__ import annotations
 
+import math
 from typing import Optional, Sequence
 
 from visual_aiming_v2.shared.schemas import Detection, Point
 
 
-def compute_iou(a: Detection, b: Detection) -> float:
-    """计算两个检测框的 IOU（交叉比）。"""
-    x1 = max(a.x, b.x)
-    y1 = max(a.y, b.y)
-    x2 = min(a.x + a.w, b.x + b.w)
-    y2 = min(a.y + a.h, b.y + b.h)
-    intersection = max(0, x2 - x1) * max(0, y2 - y1)
-    area_a = a.w * a.h
-    area_b = b.w * b.h
-    union = area_a + area_b - intersection
-    return intersection / union if union > 0 else 0.0
+def detection_boxes_match(
+    locked: Detection,
+    candidate: Detection,
+    match_distance_ratio: float = 0.75,
+    min_match_distance: float = 18.0,
+    size_ratio_min: float = 0.55,
+    size_ratio_max: float = 1.8,
+) -> bool:
+    """判断 candidate 是否仍是 locked 对应的同一个检测框。
+
+    本阶段不依赖 IOU，而是使用更直观的 Detection 框中心距离和尺寸比例。
+    """
+    if locked.w <= 0 or locked.h <= 0 or candidate.w <= 0 or candidate.h <= 0:
+        return False
+
+    lx, ly = locked.center
+    cx, cy = candidate.center
+    center_distance = math.hypot(cx - lx, cy - ly)
+    locked_diag = math.hypot(locked.w, locked.h)
+    allowed_distance = max(float(min_match_distance), locked_diag * max(0.0, float(match_distance_ratio)))
+    if center_distance > allowed_distance:
+        return False
+
+    width_ratio = candidate.w / float(locked.w)
+    height_ratio = candidate.h / float(locked.h)
+    min_ratio = max(0.01, float(size_ratio_min))
+    max_ratio = max(min_ratio, float(size_ratio_max))
+    return min_ratio <= width_ratio <= max_ratio and min_ratio <= height_ratio <= max_ratio
 
 
 class TargetTracker:
-    """目标锁定器：锁定当前目标，只在目标消失时被动切换。
+    """目标锁定器：锁定当前 Detection，只在确认消失时被动切换。"""
 
-    不做主动切换——即使新目标更近，只要锁定目标还在就继续瞄它。
-    """
-
-    def __init__(self, iou_threshold: float = 0.3) -> None:
-        self.iou_threshold = iou_threshold
+    def __init__(
+        self,
+        match_distance_ratio: float = 0.75,
+        min_match_distance: float = 18.0,
+        size_ratio_min: float = 0.55,
+        size_ratio_max: float = 1.8,
+        lost_frame_grace: int = 2,
+    ) -> None:
+        self.match_distance_ratio = match_distance_ratio
+        self.min_match_distance = min_match_distance
+        self.size_ratio_min = size_ratio_min
+        self.size_ratio_max = size_ratio_max
+        self.lost_frame_grace = max(0, int(lost_frame_grace))
         self.locked_target: Optional[Detection] = None
         self.locked_frames: int = 0
+        self.lost_frames: int = 0
+        self.switched: bool = False
+        self.has_measurement_this_frame: bool = False
 
     def update(
         self,
@@ -40,48 +70,77 @@ class TargetTracker:
         crosshair: Point,
         select_fn,
     ) -> Optional[Detection]:
-        """每帧调用：返回应该瞄准的目标。
+        """每帧调用：返回本帧可用的新测量目标，或 None。"""
+        self.switched = False
+        self.has_measurement_this_frame = False
 
-        参数:
-            detections: 当前帧所有检测结果
-            crosshair: 准星位置
-            select_fn: 选择最佳目标的函数 (detections, crosshair) -> Detection | None
-        """
         if not detections:
-            self.locked_target = None
-            self.locked_frames = 0
-            return None
+            return self._handle_missing_detections()
 
-        # 有锁定目标 → 用 IOU 在当前帧找它
         if self.locked_target is not None:
-            matched = self._find_iou_match(detections)
+            matched = self._find_detection_match(detections)
             if matched is not None:
-                # 找到了 → 继续瞄它（更新 bbox 为当前帧位置）
                 self.locked_target = matched
                 self.locked_frames += 1
+                self.lost_frames = 0
+                self.has_measurement_this_frame = True
                 return matched
-            # 找不到了 → 释放锁定，往下走选新目标
 
-        # 没有锁定目标（首次 / 目标消失）→ 用 select_fn 选最佳目标并锁定
+            previous = self.locked_target
+            best = select_fn(detections, crosshair)
+            self.locked_target = best
+            self.locked_frames = 1 if best is not None else 0
+            self.lost_frames = 0
+            self.switched = best is not None and best is not previous
+            self.has_measurement_this_frame = best is not None
+            return best
+
         best = select_fn(detections, crosshair)
         self.locked_target = best
-        self.locked_frames = 1
+        self.locked_frames = 1 if best is not None else 0
+        self.lost_frames = 0
+        self.has_measurement_this_frame = best is not None
         return best
 
     def reset(self) -> None:
         """热键停用时重置。"""
         self.locked_target = None
         self.locked_frames = 0
+        self.lost_frames = 0
+        self.switched = False
+        self.has_measurement_this_frame = False
 
-    def _find_iou_match(self, detections: Sequence[Detection]) -> Optional[Detection]:
-        """在当前帧检测中找到与锁定目标 IOU 最高的匹配。"""
-        best_iou = 0.0
-        best_match = None
-        for det in detections:
-            iou = compute_iou(self.locked_target, det)
-            if iou > best_iou:
-                best_iou = iou
-                best_match = det
-        if best_iou >= self.iou_threshold:
-            return best_match
+    def _handle_missing_detections(self) -> Optional[Detection]:
+        if self.locked_target is None:
+            self.locked_frames = 0
+            self.lost_frames = 0
+            return None
+
+        self.lost_frames += 1
+        self.has_measurement_this_frame = False
+        if self.lost_frames > self.lost_frame_grace:
+            self.locked_target = None
+            self.locked_frames = 0
+            return None
         return None
+
+    def _find_detection_match(self, detections: Sequence[Detection]) -> Optional[Detection]:
+        if self.locked_target is None:
+            return None
+
+        matches = [
+            det for det in detections
+            if detection_boxes_match(
+                self.locked_target,
+                det,
+                self.match_distance_ratio,
+                self.min_match_distance,
+                self.size_ratio_min,
+                self.size_ratio_max,
+            )
+        ]
+        if not matches:
+            return None
+
+        lx, ly = self.locked_target.center
+        return min(matches, key=lambda det: math.hypot(det.center[0] - lx, det.center[1] - ly))

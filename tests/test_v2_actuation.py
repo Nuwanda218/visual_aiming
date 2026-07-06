@@ -45,8 +45,8 @@ class ComputeAimPointTests(unittest.TestCase):
 
         ax, ay = compute_aim_point(det, head_label="head", head_bias=0.35)
 
-        self.assertEqual(ax, 120)  # x 居中: 100 + 40//2
-        self.assertEqual(ay, 121)  # y 偏上: 100 + int(60 * 0.35)
+        self.assertEqual(ax, 120)
+        self.assertEqual(ay, 121)
 
     def test_person_aim_point_near_top(self):
         """person 框瞄准点应该在框内顶部偏下（估算头部）。"""
@@ -54,8 +54,8 @@ class ComputeAimPointTests(unittest.TestCase):
 
         ax, ay = compute_aim_point(det, head_label="head", body_bias=0.25)
 
-        self.assertEqual(ax, 120)  # x 居中
-        self.assertEqual(ay, 150)  # y 偏上: 100 + int(200 * 0.25)
+        self.assertEqual(ax, 120)
+        self.assertEqual(ay, 150)
 
 
 class ComputeErrorTests(unittest.TestCase):
@@ -86,7 +86,6 @@ class ActuatorTests(unittest.TestCase):
 
         cmd = actuator.process([person, head])
         self.assertEqual(cmd.mode, "relative")
-        # 应该是瞄向 head 而不是 person
         self.assertNotEqual(cmd.dx, 0)
 
 
@@ -104,10 +103,8 @@ class AimSmootherTests(unittest.TestCase):
     def test_reduces_jitter(self):
         """微小抖动应被吸收，输出比输入更集中。"""
         smoother = AimSmoother()
-        # 在 (100,100) 附近抖动
         points = [(100, 100), (102, 98), (99, 101), (101, 100), (100, 99)]
         results = [smoother.smooth(p) for p in points]
-        # 最后几个输出应接近 (100,100)
         last = results[-1]
         self.assertLessEqual(abs(last[0] - 100), 2)
         self.assertLessEqual(abs(last[1] - 100), 2)
@@ -115,11 +112,9 @@ class AimSmootherTests(unittest.TestCase):
     def test_follows_real_movement(self):
         """目标真的在移动时，平滑点应该跟上。"""
         smoother = AimSmoother()
-        # 目标匀速向右移动
         for i in range(20):
             smoother.smooth((100 + i * 10, 100))
         result = smoother.smooth((300, 100))
-        # 应该已经接近 300
         self.assertGreater(result[0], 250)
 
     def test_hold_predicts_on_target_lost(self):
@@ -127,7 +122,6 @@ class AimSmootherTests(unittest.TestCase):
         smoother = AimSmoother(hold_frames=3)
         smoother.smooth((100, 100))
         smoother.smooth((110, 100))
-        # 目标丢失
         result = smoother.smooth(None)
         self.assertIsNotNone(result)
 
@@ -135,9 +129,9 @@ class AimSmootherTests(unittest.TestCase):
         """超过 hold_frames 后应返回 None。"""
         smoother = AimSmoother(hold_frames=2)
         smoother.smooth((100, 100))
-        smoother.smooth(None)  # hold 1
-        smoother.smooth(None)  # hold 2
-        result = smoother.smooth(None)  # 超过
+        smoother.smooth(None)
+        smoother.smooth(None)
+        result = smoother.smooth(None)
         self.assertIsNone(result)
 
     def test_reset_clears_state(self):
@@ -145,30 +139,31 @@ class AimSmootherTests(unittest.TestCase):
         smoother = AimSmoother()
         smoother.smooth((100, 100))
         smoother.reset()
-        # reset 后第一次应该直接返回原始值
         result = smoother.smooth((200, 200))
         self.assertEqual(result, (200, 200))
 
 
-from visual_aiming_v2.actuation.tracker import TargetTracker, compute_iou
+from visual_aiming_v2.actuation.tracker import TargetTracker, detection_boxes_match
 
 
-class ComputeIouTests(unittest.TestCase):
-    def test_identical_boxes(self):
-        a = Detection(x=100, y=100, w=50, h=50, confidence=0.9)
-        self.assertAlmostEqual(compute_iou(a, a), 1.0)
+class DetectionBoxMatchTests(unittest.TestCase):
+    def test_matches_near_detection_with_similar_size(self):
+        locked = Detection(x=100, y=100, w=40, h=40, confidence=0.9)
+        candidate = Detection(x=108, y=104, w=42, h=39, confidence=0.9)
 
-    def test_no_overlap(self):
-        a = Detection(x=0, y=0, w=50, h=50, confidence=0.9)
-        b = Detection(x=200, y=200, w=50, h=50, confidence=0.9)
-        self.assertAlmostEqual(compute_iou(a, b), 0.0)
+        self.assertTrue(detection_boxes_match(locked, candidate))
 
-    def test_partial_overlap(self):
-        a = Detection(x=0, y=0, w=100, h=100, confidence=0.9)
-        b = Detection(x=50, y=50, w=100, h=100, confidence=0.9)
-        iou = compute_iou(a, b)
-        self.assertGreater(iou, 0.0)
-        self.assertLess(iou, 1.0)
+    def test_rejects_far_detection(self):
+        locked = Detection(x=100, y=100, w=40, h=40, confidence=0.9)
+        candidate = Detection(x=180, y=100, w=40, h=40, confidence=0.9)
+
+        self.assertFalse(detection_boxes_match(locked, candidate, match_distance_ratio=0.75, min_match_distance=18.0))
+
+    def test_rejects_size_change_too_large(self):
+        locked = Detection(x=100, y=100, w=40, h=40, confidence=0.9)
+        candidate = Detection(x=104, y=104, w=100, h=100, confidence=0.9)
+
+        self.assertFalse(detection_boxes_match(locked, candidate, size_ratio_max=1.8))
 
 
 class TargetTrackerTests(unittest.TestCase):
@@ -185,39 +180,81 @@ class TargetTrackerTests(unittest.TestCase):
         near = Detection(x=95, y=95, w=20, h=20, confidence=0.8)
         result = tracker.update([far, near], (100, 100), self._select)
         self.assertEqual(result, near)
+        self.assertFalse(tracker.switched)
+        self.assertTrue(tracker.has_measurement_this_frame)
 
-    def test_keeps_locked_target_with_iou(self):
-        tracker = TargetTracker()
-        det1 = Detection(x=100, y=100, w=50, h=50, confidence=0.9)
-        tracker.update([det1], (100, 100), self._select)
-        det2 = Detection(x=105, y=102, w=48, h=50, confidence=0.9)
-        result = tracker.update([det2], (100, 100), self._select)
-        self.assertEqual(result, det2)
-        self.assertEqual(tracker.locked_frames, 2)
-
-    def test_ignores_closer_new_target(self):
-        tracker = TargetTracker()
+    def test_keeps_lock_when_detection_box_moves_within_match_distance(self):
+        tracker = TargetTracker(match_distance_ratio=0.75, min_match_distance=18.0)
         original = Detection(x=150, y=150, w=50, h=50, confidence=0.9)
         tracker.update([original], (100, 100), self._select)
-        original_moved = Detection(x=152, y=148, w=50, h=50, confidence=0.9)
+        original_moved = Detection(x=162, y=154, w=52, h=48, confidence=0.9)
         closer = Detection(x=95, y=95, w=20, h=20, confidence=0.9)
-        result = tracker.update([original_moved, closer], (100, 100), self._select)
-        self.assertEqual(result, original_moved)
 
-    def test_switches_when_target_disappears(self):
-        tracker = TargetTracker()
-        target_a = Detection(x=100, y=100, w=50, h=50, confidence=0.9)
-        target_b = Detection(x=200, y=200, w=30, h=30, confidence=0.8)
-        tracker.update([target_a, target_b], (100, 100), self._select)
-        result = tracker.update([target_b], (100, 100), self._select)
-        self.assertEqual(result, target_b)
+        result = tracker.update([original_moved, closer], (100, 100), self._select)
+
+        self.assertEqual(result, original_moved)
+        self.assertFalse(tracker.switched)
+        self.assertEqual(tracker.locked_frames, 2)
+
+    def test_switches_when_detection_box_moves_beyond_match_distance(self):
+        tracker = TargetTracker(match_distance_ratio=0.5, min_match_distance=10.0)
+        original = Detection(x=200, y=200, w=30, h=30, confidence=0.9)
+        tracker.update([original], (100, 100), self._select)
+        far = Detection(x=280, y=280, w=30, h=30, confidence=0.9)
+        nearer = Detection(x=95, y=95, w=20, h=20, confidence=0.9)
+
+        result = tracker.update([far, nearer], (100, 100), self._select)
+
+        self.assertEqual(result, nearer)
+        self.assertTrue(tracker.switched)
+
+    def test_rejects_match_when_box_size_changes_too_much(self):
+        tracker = TargetTracker(size_ratio_min=0.8, size_ratio_max=1.2)
+        original = Detection(x=100, y=100, w=40, h=40, confidence=0.9)
+        tracker.update([original], (100, 100), self._select)
+        huge = Detection(x=102, y=102, w=90, h=90, confidence=0.9)
+        fallback = Detection(x=95, y=95, w=20, h=20, confidence=0.9)
+
+        result = tracker.update([huge, fallback], (100, 100), self._select)
+
+        self.assertEqual(result, fallback)
+        self.assertTrue(tracker.switched)
+
+    def test_short_empty_detection_gap_does_not_steal_lock_on_reacquire(self):
+        tracker = TargetTracker(lost_frame_grace=2)
+        original = Detection(x=150, y=150, w=50, h=50, confidence=0.9)
+        tracker.update([original], (100, 100), self._select)
+
+        missing = tracker.update([], (100, 100), self._select)
+        reacquired = Detection(x=154, y=148, w=50, h=50, confidence=0.9)
+        closer = Detection(x=95, y=95, w=20, h=20, confidence=0.9)
+        result = tracker.update([reacquired, closer], (100, 100), self._select)
+
+        self.assertIsNone(missing)
+        self.assertEqual(result, reacquired)
+        self.assertEqual(tracker.lost_frames, 0)
+        self.assertFalse(tracker.switched)
+
+    def test_lost_gap_expires_then_reselects_best_target(self):
+        tracker = TargetTracker(lost_frame_grace=1)
+        original = Detection(x=150, y=150, w=50, h=50, confidence=0.9)
+        tracker.update([original], (100, 100), self._select)
+        tracker.update([], (100, 100), self._select)
+        tracker.update([], (100, 100), self._select)
+        new_target = Detection(x=95, y=95, w=20, h=20, confidence=0.9)
+
+        result = tracker.update([new_target], (100, 100), self._select)
+
+        self.assertEqual(result, new_target)
+        self.assertFalse(tracker.switched)
 
     def test_returns_none_when_all_gone(self):
-        tracker = TargetTracker()
+        tracker = TargetTracker(lost_frame_grace=0)
         det = Detection(x=100, y=100, w=50, h=50, confidence=0.9)
         tracker.update([det], (100, 100), self._select)
         result = tracker.update([], (100, 100), self._select)
         self.assertIsNone(result)
+        self.assertIsNone(tracker.locked_target)
 
 
 class NullOutputTests(unittest.TestCase):

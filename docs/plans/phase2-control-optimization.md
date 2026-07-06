@@ -143,34 +143,33 @@ def test_smoother_holds_on_target_lost():
 
 ---
 
-## P6：目标追踪 + 切换迟滞
+## P6：目标锁定 + 被动切换
 
 ### 目标
 
-给检测目标分配稳定的 ID，防止在多目标间不必要地切换。
+锁定当前瞄准的目标，只要它还在就不切换。只有当锁定目标从检测中消失时，才被动切换到下一个最近的目标。
 
 ### 原理
 
-**IOU 匹配：** 计算前一帧选中目标的 bbox 与当前帧每个检测框的交叉比（Intersection over Union）。IOU 最高且超过阈值的认为是"同一个目标"。
+**不做主动切换。** 不管有没有更近的新目标出现，只要当前锁定目标还能被 IOU 匹配到，就一直瞄它。
 
 ```
-帧 N:   选中目标 bbox = (100, 80, 45, 60)
+帧 N:   ROI 内有 A(远) B(近)
+        → 首次选择：锁定 B（最近的）
+
+帧 N+1: ROI 内有 A(远) B(近) C(更近)
+        → B 的 IOU 匹配成功 → 继续瞄 B（忽略更近的 C）
+
+帧 N+2: ROI 内有 A(远) C(更近)，B 消失了
+        → B 的 IOU 匹配失败 → 释放锁定 → 选最近的 C → 锁定 C
+```
+
+**IOU 匹配判断"同一个目标"：** 计算锁定目标上一帧 bbox 与当前帧每个检测框的交叉比。IOU 最高且超过阈值的认为是同一个目标。
+
+```
+帧 N:   锁定目标 bbox = (100, 80, 45, 60)
 帧 N+1: 检测框 A = (102, 82, 43, 58)  IOU = 0.85 → 同一个目标 ✓
          检测框 B = (300, 200, 50, 70)  IOU = 0.00 → 不同目标
-```
-
-**切换迟滞：** 即使新目标距离更近，也不立刻切换。新目标必须"好很多"才触发。
-
-```
-当前锁定目标 A: 距离准星 80px
-新候选目标 B:   距离准星 60px
-hysteresis = 30px
-
-切换条件: B 的距离 < A 的距离 - hysteresis
-60 < 80 - 30 = 50?  → 否，不切换，继续瞄 A
-
-如果 B 距离 = 40px:
-40 < 50?  → 是，切换到 B
 ```
 
 ### 实现
@@ -179,58 +178,75 @@ hysteresis = 30px
 
 ```python
 class TargetTracker:
-    """目标追踪器：IOU 匹配 + 切换迟滞。"""
+    """目标锁定器：锁定当前目标，只在目标消失时被动切换。"""
 
-    def __init__(self, iou_threshold=0.3, switch_hysteresis=30.0, switch_cooldown=10):
-        self.locked_target: Detection | None = None  # 当前锁定目标
+    def __init__(self, iou_threshold=0.3):
+        self.locked_target: Detection | None = None  # 当前锁定的目标
         self.locked_frames = 0                       # 已锁定帧数
-        self.cooldown_remaining = 0                  # 切换冷却计数
 
     def update(self, detections, crosshair, head_label, person_label) -> Detection | None:
-        """输入检测结果，输出应该瞄准的目标（带粘性）。"""
+        """每帧调用：返回应该瞄准的目标。"""
         if not detections:
             self.locked_target = None
+            self.locked_frames = 0
             return None
 
+        # 有锁定目标 → 用 IOU 在当前帧找它
+        if self.locked_target is not None:
+            matched = self._find_iou_match(detections)
+            if matched is not None:
+                # 找到了 → 继续瞄它（更新 bbox 为当前帧的位置）
+                self.locked_target = matched
+                self.locked_frames += 1
+                return matched
+            # 找不到了 → 释放锁定，往下走选新目标
+
+        # 没有锁定目标（首次 / 目标消失）→ 选离准星最近的，锁定
         best = select_target(detections, crosshair, head_label, person_label)
+        self.locked_target = best
+        self.locked_frames = 1
+        return best
 
-        # 没有锁定目标 → 直接锁定
-        if self.locked_target is None:
-            self.locked_target = best
-            return best
-
-        # 在当前帧找到与锁定目标 IOU 最高的匹配
-        matched = self._find_iou_match(detections)
-
-        if matched is not None:
-            # 锁定目标还在 → 继续瞄它（除非新目标好很多）
-            if self._should_switch(matched, best, crosshair):
-                self.locked_target = best
-                self.cooldown_remaining = self.switch_cooldown
-                return best
-            self.locked_target = matched  # 更新 bbox（位置可能变了）
-            return matched
-        else:
-            # 锁定目标丢了 → 切换到最佳目标
-            self.locked_target = best
-            return best
+    def reset(self):
+        """热键停用时重置。"""
+        self.locked_target = None
+        self.locked_frames = 0
 
     def _find_iou_match(self, detections) -> Detection | None:
-        """在当前帧检测中找到与锁定目标 IOU 最高的。"""
-
-    def _should_switch(self, current_match, new_best, crosshair) -> bool:
-        """判断是否应该从当前目标切换到新目标。"""
+        """在当前帧检测中找到与锁定目标 IOU 最高的匹配。"""
+        best_iou = 0.0
+        best_match = None
+        for det in detections:
+            iou = self._compute_iou(self.locked_target, det)
+            if iou > best_iou:
+                best_iou = iou
+                best_match = det
+        if best_iou >= self.iou_threshold:
+            return best_match
+        return None
 
     def _compute_iou(self, a: Detection, b: Detection) -> float:
         """计算两个检测框的 IOU。"""
+        x1 = max(a.x, b.x)
+        y1 = max(a.y, b.y)
+        x2 = min(a.x + a.w, b.x + b.w)
+        y2 = min(a.y + a.h, b.y + b.h)
+        intersection = max(0, x2 - x1) * max(0, y2 - y1)
+        area_a = a.w * a.h
+        area_b = b.w * b.h
+        union = area_a + area_b - intersection
+        return intersection / union if union > 0 else 0.0
 ```
 
-修改 `Actuator.process()`，在 `select_target()` 之前插入 tracker：
+修改 `Actuator.process()`，用 tracker 替代 select_target：
 
 ```python
 def process(self, detections):
-    # P6: 目标追踪 + 切换迟滞
-    selected = self.tracker.update(detections, self.crosshair, ...)  # ← 替代 select_target()
+    # P6: 目标锁定（只在目标消失时被动切换）
+    selected = self.tracker.update(detections, self.crosshair, ...)
+
+    if selected is None:
+        return Command.noop("no_target")
 
     aim_point = compute_aim_point(selected, ...)
     aim_point = self.smoother.smooth(aim_point)  # P5
@@ -242,37 +258,37 @@ def process(self, detections):
 
 ```python
 # shared/config.py 新增
-tracker_iou_threshold: float = 0.3      # IOU 低于此值认为目标丢失
-tracker_switch_hysteresis: float = 30.0  # 切换门槛（像素距离差）
-tracker_switch_cooldown: int = 10        # 切换后冷却帧数
+tracker_iou_threshold: float = 0.3   # IOU 低于此值认为目标消失
 ```
+
+只有一个参数。不需要 hysteresis 和 cooldown——因为不做主动切换。
 
 ### 测试用例
 
 ```python
-def test_tracker_keeps_same_target_with_iou():
-    """高 IOU 匹配时应该保持锁定同一目标。"""
+def test_locks_nearest_target_initially():
+    """首次应锁定离准星最近的目标。"""
 
-def test_tracker_does_not_switch_without_significant_advantage():
-    """新目标略近不应触发切换。"""
+def test_keeps_locked_target_when_iou_matches():
+    """锁定目标位置略有变化但 IOU 足够时，应继续瞄它。"""
 
-def test_tracker_switches_when_much_better():
-    """新目标明显更近时应触发切换。"""
+def test_ignores_closer_new_target():
+    """有更近的新目标出现时，只要锁定目标还在就不切换。"""
 
-def test_tracker_switches_when_target_lost():
-    """锁定目标从检测中消失时应切换到新目标。"""
+def test_switches_when_locked_target_disappears():
+    """锁定目标从检测中消失时，应切换到下一个最近的。"""
 
-def test_tracker_cooldown_prevents_rapid_switching():
-    """切换冷却期内不应再次切换。"""
+def test_switches_to_none_when_all_targets_gone():
+    """所有目标都消失时，返回 None。"""
 
 def test_iou_computation():
-    """IOU 计算的正确性。"""
+    """IOU 计算正确性：完全重合=1，完全不重合=0，部分重合在0~1之间。"""
 ```
 
 ### 验证
 
-- `--visual`：观察选中目标框（白色加粗）是否稳定，不在多个目标间跳
-- `--verbose`：检查 SELECT 行的目标是否每帧一致
+- `--visual`：多目标场景下，白色加粗框应始终锁定同一个目标，不跳
+- `--verbose`：TRACK 行显示 locked_frames 持续递增，target_id 不变
 
 ---
 

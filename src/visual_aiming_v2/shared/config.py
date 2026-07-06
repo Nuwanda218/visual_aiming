@@ -31,3 +31,8 @@ class Config:
     control_speed: float = 100.0        # 移动速度
     control_acceleration: float = 0.3   # 速度追随系数（0~1，越大越跟手）
     control_deadzone: float = 2.0       # 误差死区（像素，小于此值停止输出）
+
+    # actuation 层 — 瞄准点平滑（Kalman 滤波器）
+    smooth_process_noise: float = 0.1   # 过程噪声（越大越跟手，越小越平滑）
+    smooth_measurement_noise: float = 1.0  # 观测噪声（越大越平滑，越小越跟手）
+    smooth_hold_frames: int = 5         # 目标丢失后继续预测的帧数

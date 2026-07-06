@@ -292,92 +292,15 @@ def test_iou_computation():
 
 ---
 
-## P7：切换平滑过渡
+## P7：开枪时保持吸附（长远目标）
 
-### 目标
+### 问题
 
-当 P6 决定切换目标时，瞄准点不瞬间跳到新位置，而是平滑过渡。
+游戏中枪械有后坐力，开枪时准星被强制上抬。当前的瞄准纠正会产生大幅鼠标移动来拉回准星，效果不佳。
 
-### 原理
+### 方向
 
-切换发生时，AimSmoother 不重置，而是启动一个过渡期：
-
-```
-帧 N:   瞄准目标 A, aim = (150, 100)
-帧 N+1: 切换到目标 B, 新 aim = (300, 200)
-
-不用过渡（当前行为）：
-  帧 N+1: 输出 (300, 200) ← 瞬间跳 200px
-
-用过渡（P7）：
-  帧 N+1: 输出 (165, 110)   ← 10% 过渡
-  帧 N+2: 输出 (195, 130)   ← 30% 过渡
-  帧 N+3: 输出 (240, 160)   ← 60% 过渡
-  帧 N+4: 输出 (280, 185)   ← 85% 过渡
-  帧 N+5: 输出 (300, 200)   ← 100% 过渡完成
-```
-
-过渡曲线用 smoothstep（先慢后快再慢）：
-
-```python
-def smoothstep(t):
-    t = max(0, min(1, t))
-    return t * t * (3 - 2 * t)
-```
-
-### 实现
-
-在 `AimSmoother` 中增加过渡逻辑：
-
-```python
-class AimSmoother:
-    def __init__(self, ..., transition_frames=8):
-        self._transition_from = None   # 过渡起点
-        self._transition_to = None     # 过渡终点
-        self._transition_progress = 0  # 0~transition_frames
-        self._transition_frames = transition_frames
-
-    def start_transition(self, from_point, to_point):
-        """P6 触发切换时调用。"""
-        self._transition_from = from_point
-        self._transition_to = to_point
-        self._transition_progress = 0
-
-    def smooth(self, raw_point):
-        if self._transition_from is not None:
-            # 过渡期间：插值
-            ...
-        # 正常 Kalman 平滑
-        ...
-```
-
-### 配置参数
-
-```python
-# shared/config.py 新增
-smooth_transition_frames: int = 8   # 切换过渡帧数（约 0.15 秒 @ 60fps）
-```
-
-### 测试用例
-
-```python
-def test_transition_interpolates_smoothly():
-    """切换过渡应该从旧位置平滑移到新位置。"""
-    smoother = AimSmoother(transition_frames=5)
-    smoother.smooth((100, 100))
-    smoother.start_transition((100, 100), (200, 200))
-    results = [smoother.smooth((200, 200)) for _ in range(5)]
-    # results 应该从 (100,100) 附近逐步逼近 (200,200)
-    # 且中间值不超出 (100,100)-(200,200) 范围
-
-def test_transition_uses_smoothstep_curve():
-    """过渡曲线应该是先慢后快再慢。"""
-```
-
-### 验证
-
-- `--visual`：切换目标时观察瞄准点是否平滑移动，而非瞬间跳变
-- 对比：关闭过渡（`smooth_transition_frames=0`），看差异
+需要在开枪时补偿后坐力，使准星保持稳定。具体方案待 P5+P6 完成并实测后再设计。
 
 ---
 
@@ -386,15 +309,13 @@ def test_transition_uses_smoothstep_curve():
 ```
 P5 瞄准点 Kalman 平滑
     ↓  commit
-P6 目标追踪 + 切换迟滞
-    ↓  commit
-P7 切换平滑过渡
+P6 目标锁定 + 被动切换
     ↓  commit
 ```
 
-三个按顺序做，每个独立 commit。P5 先让单目标稳定，P6 再让多目标不乱切，P7 最后让切换也平滑。
+P5 先让同一目标的瞄准点稳定，P6 再让多目标不乱切。P7 作为长远目标，待实测后决定方案。
 
-## 后续方向（P5~P7 完成后）
+## 后续方向（P5~P6 完成后）
 
 | 方向 | 内容 |
 |------|------|

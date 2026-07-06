@@ -7,6 +7,7 @@ from typing import Optional, Sequence
 from visual_aiming_v2.shared.config import Config
 from visual_aiming_v2.shared.schemas import Command, Detection, Point
 from visual_aiming_v2.actuation.control import FpsController
+from visual_aiming_v2.actuation.aim_filter import AimSmoother
 
 
 def select_target(
@@ -28,7 +29,6 @@ def select_target(
     # 优先选 head
     candidates = heads if heads else persons
     if not candidates:
-        # 既不是 head 也不是 person，退回选最近的
         candidates = list(detections)
 
     return min(candidates, key=lambda d: math.hypot(d.center[0] - cx, d.center[1] - cy))
@@ -44,10 +44,8 @@ def compute_aim_point(
     aim_x = detection.x + detection.w // 2
 
     if detection.label == head_label:
-        # head 框：中心偏上（bias=0.35 表示从顶部 35% 位置）
         aim_y = detection.y + int(detection.h * head_bias)
     else:
-        # person 框：顶部偏下（bias=0.25 表示从顶部 25% 位置，估算头部）
         aim_y = detection.y + int(detection.h * body_bias)
 
     return (aim_x, aim_y)
@@ -59,7 +57,11 @@ def compute_error(aim_point: Point, crosshair: Point) -> tuple[int, int]:
 
 
 class Actuator:
-    """把 Detection 序列转换为 Command。支持直接误差输出或 FPS 速度控制。"""
+    """把 Detection 序列转换为 Command。
+
+    内部流水线：
+    select_target → compute_aim_point → AimSmoother(P5) → compute_error → FpsController → Command
+    """
 
     def __init__(self, config: Config, use_controller: bool = False) -> None:
         # 准星 = ROI 中心 + 偏移量
@@ -73,6 +75,13 @@ class Actuator:
         self.head_bias = getattr(config, "head_bias", 0.35)
         self.body_bias = getattr(config, "body_bias", 0.25)
 
+        # P5: 瞄准点 Kalman 平滑
+        self.smoother = AimSmoother(
+            process_noise=getattr(config, "smooth_process_noise", 0.1),
+            measurement_noise=getattr(config, "smooth_measurement_noise", 1.0),
+            hold_frames=getattr(config, "smooth_hold_frames", 5),
+        )
+
         # FPS 速度控制器（可选）
         self.controller: FpsController | None = None
         if use_controller:
@@ -85,16 +94,23 @@ class Actuator:
     def process(self, detections: Sequence[Detection]) -> Command:
         # 有头选头，无头选 person
         selected = select_target(detections, self.crosshair, self.head_label, self.person_label)
-        if selected is None:
+
+        if selected is not None:
+            # 计算原始瞄准点（带偏置）
+            raw_aim = compute_aim_point(selected, self.head_label, self.head_bias, self.body_bias)
+        else:
+            raw_aim = None
+
+        # P5: Kalman 平滑（目标丢失时 hold 预测）
+        smoothed_aim = self.smoother.smooth(raw_aim)
+
+        if smoothed_aim is None:
             if self.controller is not None:
                 self.controller.reset()
             return Command.noop("no_target")
 
-        # 计算瞄准点（带偏置）
-        aim_point = compute_aim_point(selected, self.head_label, self.head_bias, self.body_bias)
-
         # 计算误差
-        ex, ey = compute_error(aim_point, self.crosshair)
+        ex, ey = compute_error(smoothed_aim, self.crosshair)
 
         # 通过 FPS 控制器平滑输出，或直接输出原始误差
         if self.controller is not None:

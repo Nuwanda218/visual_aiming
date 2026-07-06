@@ -85,7 +85,63 @@ class ActuatorTests(unittest.TestCase):
 
 
 from visual_aiming_v2.actuation.outputs import LogOutput, NullOutput
+from visual_aiming_v2.actuation.aim_filter import AimSmoother
 
+
+class AimSmootherTests(unittest.TestCase):
+    def test_first_point_passes_through(self):
+        """首次观测应直接返回原始值。"""
+        smoother = AimSmoother()
+        result = smoother.smooth((100, 100))
+        self.assertEqual(result, (100, 100))
+
+    def test_reduces_jitter(self):
+        """微小抖动应被吸收，输出比输入更集中。"""
+        smoother = AimSmoother()
+        # 在 (100,100) 附近抖动
+        points = [(100, 100), (102, 98), (99, 101), (101, 100), (100, 99)]
+        results = [smoother.smooth(p) for p in points]
+        # 最后几个输出应接近 (100,100)
+        last = results[-1]
+        self.assertLessEqual(abs(last[0] - 100), 2)
+        self.assertLessEqual(abs(last[1] - 100), 2)
+
+    def test_follows_real_movement(self):
+        """目标真的在移动时，平滑点应该跟上。"""
+        smoother = AimSmoother()
+        # 目标匀速向右移动
+        for i in range(20):
+            smoother.smooth((100 + i * 10, 100))
+        result = smoother.smooth((300, 100))
+        # 应该已经接近 300
+        self.assertGreater(result[0], 250)
+
+    def test_hold_predicts_on_target_lost(self):
+        """目标丢失后应继续预测几帧。"""
+        smoother = AimSmoother(hold_frames=3)
+        smoother.smooth((100, 100))
+        smoother.smooth((110, 100))
+        # 目标丢失
+        result = smoother.smooth(None)
+        self.assertIsNotNone(result)
+
+    def test_hold_expires(self):
+        """超过 hold_frames 后应返回 None。"""
+        smoother = AimSmoother(hold_frames=2)
+        smoother.smooth((100, 100))
+        smoother.smooth(None)  # hold 1
+        smoother.smooth(None)  # hold 2
+        result = smoother.smooth(None)  # 超过
+        self.assertIsNone(result)
+
+    def test_reset_clears_state(self):
+        """reset 后应重新初始化。"""
+        smoother = AimSmoother()
+        smoother.smooth((100, 100))
+        smoother.reset()
+        # reset 后第一次应该直接返回原始值
+        result = smoother.smooth((200, 200))
+        self.assertEqual(result, (200, 200))
 
 class NullOutputTests(unittest.TestCase):
     def test_apply_does_nothing(self):

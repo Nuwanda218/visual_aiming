@@ -29,8 +29,8 @@ class YoloDetector:
             self._load_model()
         results = self._model(
             image,
-            conf=self.config.confidence,
-            iou=self.config.iou,
+            conf=self.config.perception.confidence,
+            iou=self.config.perception.iou,
             verbose=False,
         )
         detections: list[Detection] = []
@@ -67,15 +67,15 @@ class YoloDetector:
         else:
             print("[YOLO] CUDA 不可用，使用 CPU 推理")
 
-        # 加载模型
-        print(f"[YOLO] 加载模型: {self.config.model_path} | device={self.config.device}")
-        self._model = YOLO(self.config.model_path)
+        perception = self.config.perception
+        print(f"[YOLO] 加载模型: {perception.model_path} | device={perception.device}")
+        self._model = YOLO(perception.model_path)
 
         # 设备分配
-        if self.config.device == "auto":
+        if perception.device == "auto":
             runtime_device = "cuda:0" if cuda_available else "cpu"
         else:
-            runtime_device = self.config.device
+            runtime_device = perception.device
         self._model.to(runtime_device)
 
         print(f"[YOLO] 模型已加载 | 运行设备: {runtime_device}")

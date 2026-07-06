@@ -6,22 +6,25 @@ import json
 from pathlib import Path
 
 
+_DEFAULT_MODEL = "models/best.pt"
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="V2 视觉瞄准运行时")
     parser.add_argument("--video", default="", help="视频文件路径（视频回放模式）")
     parser.add_argument("--realtime", action="store_true", help="实时截屏模式（热键激活）")
-    parser.add_argument("--model", default="models/best.pt", help="YOLO 模型路径")
+    parser.add_argument("--model", default=_DEFAULT_MODEL, help="YOLO 模型路径")
     parser.add_argument("--output", choices=["null", "log", "mouse"], default="null", help="输出后端（mouse 需确认安全）")
     parser.add_argument("--max-frames", type=int, default=0, help="最多处理帧数，0 表示全部")
-    parser.add_argument("--config", default="config.json", help="配置文件路径")
+    parser.add_argument("--config", default="config.v2.json", help="V2 配置文件路径")
     parser.add_argument("--verbose", action="store_true", help="启用逐帧诊断日志输出")
     parser.add_argument("--visual", action="store_true", help="启用 OpenCV 可视化调试窗口")
-    parser.add_argument("--tune", choices=["capture"], default="", help="进入调参模式（目前支持 capture）")
+    parser.add_argument("--tune", choices=["capture", "config"], default="", help="进入调参模式")
     return parser.parse_args(argv)
 
 
 def load_config_file(path: str) -> dict:
-    """读取 config.json，不存在则返回空字典。"""
+    """读取 V2 嵌套配置文件，不存在则返回空字典。"""
     config_path = Path(path)
     if not config_path.exists():
         return {}
@@ -30,20 +33,14 @@ def load_config_file(path: str) -> dict:
 
 
 def _build_config(args) -> "Config":
-    """合并配置：命令行参数 > config.json 默认值。"""
-    from visual_aiming_v2.shared.config import Config
+    """合并配置：config.v2.json 默认值 + 明确 CLI 覆盖。"""
+    from visual_aiming_v2.shared.config import config_from_mapping
 
-    file_config = load_config_file(args.config)
-    return Config(
-        model_path=args.model or file_config.get("model_path", "models/best.pt"),
-        confidence=float(file_config.get("confidence", 0.5)),
-        iou=float(file_config.get("iou", 0.45)),
-        device=str(file_config.get("device", "auto")),
-        image_width=int(file_config.get("image_width", 410)),
-        image_height=int(file_config.get("image_height", 315)),
-        crosshair_offset_x=int(file_config.get("crosshair_offset_x", 0)),
-        crosshair_offset_y=int(file_config.get("crosshair_offset_y", 0)),
-    )
+    config = config_from_mapping(load_config_file(args.config))
+    if args.model != _DEFAULT_MODEL:
+        config.perception.model_path = args.model
+    config.output.backend = args.output
+    return config
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -56,6 +53,13 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         from visual_aiming_v2.interaction.tuner import CaptureTuner
         CaptureTuner(args.video, config_path=args.config).run()
+        return 0
+    if args.tune == "config":
+        if not args.video:
+            print("[错误] --tune config 需要 --video 参数")
+            return 1
+        from visual_aiming_v2.interaction.tuner import V2ConfigTuner
+        V2ConfigTuner(args.video, config_path=args.config).run()
         return 0
 
     # 实时模式
@@ -112,6 +116,7 @@ def _run_realtime(args) -> int:
             actuator=actuator,
             output=output,
             hotkey=hotkey,
+            detect_fps=config.runtime.detect_fps,
             on_tick=on_tick,
         )
     finally:

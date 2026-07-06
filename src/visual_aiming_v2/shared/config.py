@@ -1,41 +1,135 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
+from typing import Any, Mapping
 
 
 @dataclass
-class Config:
-    """V2 最小配置集合，只保留当前运行链路真正需要的参数。"""
+class PerceptionConfig:
+    """perception 层 — YOLO 检测器。"""
 
-    # perception 层 — YOLO 检测器
     model_path: str = "models/best.pt"
     confidence: float = 0.5
     iou: float = 0.45
     device: str = "auto"
 
-    # capture 层 — ROI 裁切尺寸
+
+@dataclass
+class CaptureConfig:
+    """capture 层 — ROI 裁切和准星偏移。"""
+
     image_width: int = 410
     image_height: int = 315
-
-    # actuation 层 — 准星偏移（相对于 ROI 中心）
     crosshair_offset_x: int = 0
     crosshair_offset_y: int = 0
 
-    # actuation 层 — 瞄点选择
-    head_label: str = "head"       # head 类别标签名
-    person_label: str = "person"   # person 类别标签名
-    head_bias: float = 0.35        # head 框瞄准点垂直偏置（0=顶部, 0.5=中心, 1=底部）
-    body_bias: float = 0.25        # person 框瞄准点垂直偏置（偏上估算头部位置）
 
-    # actuation 层 — FPS 鼠标控制
-    control_speed: float = 100.0        # 移动速度
-    control_acceleration: float = 0.3   # 速度追随系数（0~1，越大越跟手）
-    control_deadzone: float = 2.0       # 误差死区（像素，小于此值停止输出）
+@dataclass
+class TargetingConfig:
+    """actuation 层 — 目标类别和瞄点偏置。"""
 
-    # actuation 层 — 瞄准点平滑（Kalman 滤波器）
-    smooth_process_noise: float = 0.1   # 过程噪声（越大越跟手，越小越平滑）
-    smooth_measurement_noise: float = 1.0  # 观测噪声（越大越平滑，越小越跟手）
-    smooth_hold_frames: int = 5         # 目标丢失后继续预测的帧数
+    head_label: str = "head"
+    person_label: str = "person"
+    head_bias: float = 0.35
+    body_bias: float = 0.25
 
-    # actuation 层 — 目标锁定（IOU 追踪）
-    tracker_iou_threshold: float = 0.3  # IOU 低于此值认为目标消失
+
+@dataclass
+class TrackerConfig:
+    """actuation 层 — Detection 框匹配锁定参数。"""
+
+    match_distance_ratio: float = 0.75
+    min_match_distance: float = 18.0
+    size_ratio_min: float = 0.55
+    size_ratio_max: float = 1.8
+    lost_frame_grace: int = 2
+
+
+@dataclass
+class SmoothingConfig:
+    """actuation 层 — 瞄点平滑参数。"""
+
+    enabled: bool = True
+    alpha: float = 0.55
+    jitter_radius: float = 2.0
+    stable_frames: int = 2
+    hold_frames: int = 3
+
+
+@dataclass
+class ControlConfig:
+    """actuation 层 — FPS 鼠标速度控制参数。"""
+
+    speed: float = 100.0
+    acceleration: float = 0.3
+    deadzone: float = 2.0
+    near_radius: float = 80.0
+    near_speed_scale: float = 0.35
+
+
+@dataclass
+class RuntimeConfig:
+    """runtime 层 — 主循环参数。"""
+
+    detect_fps: float = 30.0
+
+
+@dataclass
+class OutputConfig:
+    """output 层 — 输出后端。"""
+
+    backend: str = "null"
+
+
+@dataclass
+class Config:
+    """V2 配置根对象，按架构层分组，避免 V1 平铺字段污染。"""
+
+    perception: PerceptionConfig = field(default_factory=PerceptionConfig)
+    capture: CaptureConfig = field(default_factory=CaptureConfig)
+    targeting: TargetingConfig = field(default_factory=TargetingConfig)
+    tracker: TrackerConfig = field(default_factory=TrackerConfig)
+    smoothing: SmoothingConfig = field(default_factory=SmoothingConfig)
+    control: ControlConfig = field(default_factory=ControlConfig)
+    runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    output: OutputConfig = field(default_factory=OutputConfig)
+
+
+def config_to_mapping(config: Config) -> dict[str, Any]:
+    """转换为可写入 config.v2.json 的嵌套 dict。"""
+
+    return asdict(config)
+
+
+def config_from_mapping(data: Mapping[str, Any]) -> Config:
+    """从嵌套 dict 创建 Config，缺失字段使用默认值。"""
+
+    config = Config()
+    if not isinstance(data, Mapping):
+        return config
+    for item in fields(config):
+        section_data = data.get(item.name)
+        section = getattr(config, item.name)
+        if isinstance(section_data, Mapping) and is_dataclass(section):
+            _apply_section(section, section_data)
+    return config
+
+
+def _apply_section(section: object, values: Mapping[str, Any]) -> None:
+    for item in fields(section):
+        if item.name not in values:
+            continue
+        current = getattr(section, item.name)
+        value = values[item.name]
+        try:
+            if isinstance(current, bool):
+                value = bool(value)
+            elif isinstance(current, int) and not isinstance(current, bool):
+                value = int(value)
+            elif isinstance(current, float):
+                value = float(value)
+            elif isinstance(current, str):
+                value = str(value)
+        except (TypeError, ValueError):
+            continue
+        setattr(section, item.name, value)

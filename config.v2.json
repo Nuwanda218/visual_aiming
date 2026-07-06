@@ -1,0 +1,47 @@
+{
+  "perception": {
+    "model_path": "models/best.pt",
+    "confidence": 0.5,
+    "iou": 0.45,
+    "device": "auto"
+  },
+  "capture": {
+    "image_width": 410,
+    "image_height": 315,
+    "crosshair_offset_x": 0,
+    "crosshair_offset_y": 0
+  },
+  "targeting": {
+    "head_label": "head",
+    "person_label": "person",
+    "head_bias": 0.35,
+    "body_bias": 0.25
+  },
+  "tracker": {
+    "match_distance_ratio": 0.75,
+    "min_match_distance": 18.0,
+    "size_ratio_min": 0.55,
+    "size_ratio_max": 1.8,
+    "lost_frame_grace": 2
+  },
+  "smoothing": {
+    "enabled": true,
+    "alpha": 0.55,
+    "jitter_radius": 2.0,
+    "stable_frames": 2,
+    "hold_frames": 3
+  },
+  "control": {
+    "speed": 100.0,
+    "acceleration": 0.3,
+    "deadzone": 2.0,
+    "near_radius": 80.0,
+    "near_speed_scale": 0.35
+  },
+  "runtime": {
+    "detect_fps": 30.0
+  },
+  "output": {
+    "backend": "null"
+  }
+}

@@ -12,6 +12,12 @@ from visual_aiming_v2.shared.config import Config
 from visual_aiming_v2.perception.detectors import StaticDetector, YoloDetector
 
 
+def make_config(model_path="models/best.pt"):
+    config = Config()
+    config.perception.model_path = model_path
+    return config
+
+
 class StaticDetectorTests(unittest.TestCase):
     def test_returns_configured_detections(self):
         det = Detection(x=10, y=20, w=30, h=40, confidence=0.9, label="head")
@@ -29,13 +35,13 @@ class StaticDetectorTests(unittest.TestCase):
 
 class YoloDetectorTests(unittest.TestCase):
     def test_accepts_config_and_lazy_loads(self):
-        config = Config(model_path="nonexistent.pt")
+        config = make_config(model_path="nonexistent.pt")
         detector = YoloDetector(config)
 
         self.assertIsNone(detector._model)
 
     def test_detect_raises_when_model_not_found(self):
-        config = Config(model_path="nonexistent.pt")
+        config = make_config(model_path="nonexistent.pt")
         detector = YoloDetector(config)
 
         with self.assertRaises(Exception):

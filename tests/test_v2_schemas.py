@@ -62,21 +62,29 @@ from visual_aiming_v2.shared.config import Config
 
 
 class ConfigTests(unittest.TestCase):
-    def test_defaults(self):
+    def test_defaults_are_grouped_by_v2_layer(self):
         config = Config()
 
-        self.assertEqual(config.model_path, "models/best.pt")
-        self.assertEqual(config.confidence, 0.5)
-        self.assertEqual(config.device, "auto")
-        self.assertGreater(config.image_width, 0)
-        self.assertGreater(config.image_height, 0)
+        self.assertEqual(config.perception.model_path, "models/best.pt")
+        self.assertEqual(config.perception.confidence, 0.5)
+        self.assertEqual(config.perception.device, "auto")
+        self.assertGreater(config.capture.image_width, 0)
+        self.assertGreater(config.capture.image_height, 0)
+        self.assertGreater(config.control.speed, 0.0)
+        self.assertGreater(config.tracker.match_distance_ratio, 0.0)
+        self.assertTrue(config.smoothing.enabled)
 
-    def test_overrides(self):
-        config = Config(model_path="custom.pt", confidence=0.8, device="cpu")
+    def test_nested_overrides(self):
+        config = Config()
+        config.perception.model_path = "custom.pt"
+        config.perception.confidence = 0.8
+        config.capture.image_width = 320
+        config.control.speed = 220.0
 
-        self.assertEqual(config.model_path, "custom.pt")
-        self.assertEqual(config.confidence, 0.8)
-        self.assertEqual(config.device, "cpu")
+        self.assertEqual(config.perception.model_path, "custom.pt")
+        self.assertEqual(config.perception.confidence, 0.8)
+        self.assertEqual(config.capture.image_width, 320)
+        self.assertEqual(config.control.speed, 220.0)
 
 
 if __name__ == "__main__":

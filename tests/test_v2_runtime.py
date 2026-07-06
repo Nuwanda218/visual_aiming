@@ -16,9 +16,16 @@ from visual_aiming_v2.actuation.outputs import LogOutput
 from visual_aiming_v2.runtime.pipeline import Pipeline
 
 
+def make_config(image_width=200, image_height=200):
+    config = Config()
+    config.capture.image_width = image_width
+    config.capture.image_height = image_height
+    return config
+
+
 class PipelineTests(unittest.TestCase):
     def _make_pipeline(self, detections, image_size=200):
-        config = Config(image_width=image_size, image_height=image_size)
+        config = make_config(image_width=image_size, image_height=image_size)
         return Pipeline(
             detector=StaticDetector(detections),
             actuator=Actuator(config),
@@ -44,7 +51,6 @@ class PipelineTests(unittest.TestCase):
 
         self.assertEqual(result.command.mode, "relative")
         self.assertEqual(result.command.dx, 2)
-        # head_bias=0.35: aim_y = 82 + int(20*0.35) = 89, crosshair_y = 100, dy = -11
         self.assertEqual(result.command.dy, -11)
 
     def test_output_receives_command(self):
@@ -77,7 +83,7 @@ class RunnerTests(unittest.TestCase):
             Frame(image="b", sequence=1, timestamp=0.1),
             Frame(image="c", sequence=2, timestamp=0.2),
         ]
-        config = Config(image_width=200, image_height=200)
+        config = make_config()
         output = LogOutput()
 
         results = run(
@@ -92,7 +98,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_max_frames_limits_processing(self):
         frames = [Frame(image=f"f{i}", sequence=i, timestamp=i * 0.1) for i in range(10)]
-        config = Config(image_width=200, image_height=200)
+        config = make_config()
 
         results = run(
             capture=MemoryCapture(frames),
@@ -112,7 +118,7 @@ class RunnerTests(unittest.TestCase):
         orig_out_close = output.close
         capture.close = lambda: (close_log.append("capture"), orig_cap_close())
         output.close = lambda: (close_log.append("output"), orig_out_close())
-        config = Config(image_width=200, image_height=200)
+        config = make_config()
 
         run(capture=capture, detector=StaticDetector([]), actuator=Actuator(config), output=output)
 

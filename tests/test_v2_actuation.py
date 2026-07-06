@@ -67,14 +67,20 @@ class ComputeErrorTests(unittest.TestCase):
 
 
 class ActuatorTests(unittest.TestCase):
+    def _config(self, image_width: int, image_height: int) -> Config:
+        config = Config()
+        config.capture.image_width = image_width
+        config.capture.image_height = image_height
+        return config
+
     def test_noop_when_no_detections(self):
-        actuator = Actuator(Config(image_width=200, image_height=200))
+        actuator = Actuator(self._config(image_width=200, image_height=200))
         cmd = actuator.process([])
         self.assertEqual(cmd.reason, "no_target")
 
     def test_prefers_head_in_process(self):
         """Actuator.process 应该有头选头。"""
-        actuator = Actuator(Config(image_width=400, image_height=400))
+        actuator = Actuator(self._config(image_width=400, image_height=400))
         head = Detection(x=250, y=250, w=20, h=20, confidence=0.8, label="head")
         person = Detection(x=195, y=195, w=10, h=10, confidence=0.9, label="person")
 

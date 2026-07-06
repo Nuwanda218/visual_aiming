@@ -66,35 +66,32 @@ class Actuator:
 
     def __init__(self, config: Config, use_controller: bool = False) -> None:
         # 准星 = ROI 中心 + 偏移量
-        offset_x = getattr(config, "crosshair_offset_x", 0)
-        offset_y = getattr(config, "crosshair_offset_y", 0)
-        self.crosshair = (config.image_width // 2 + offset_x, config.image_height // 2 + offset_y)
+        capture = config.capture
+        targeting = config.targeting
+        self.crosshair = (
+            capture.image_width // 2 + capture.crosshair_offset_x,
+            capture.image_height // 2 + capture.crosshair_offset_y,
+        )
 
         # 瞄点选择参数
-        self.head_label = getattr(config, "head_label", "head")
-        self.person_label = getattr(config, "person_label", "person")
-        self.head_bias = getattr(config, "head_bias", 0.35)
-        self.body_bias = getattr(config, "body_bias", 0.25)
+        self.head_label = targeting.head_label
+        self.person_label = targeting.person_label
+        self.head_bias = targeting.head_bias
+        self.body_bias = targeting.body_bias
 
-        # P6: 目标锁定器
-        self.tracker = TargetTracker(
-            iou_threshold=getattr(config, "tracker_iou_threshold", 0.3),
-        )
+        # P6: 目标锁定器（Step 4 会替换为 Detection 框匹配）
+        self.tracker = TargetTracker()
 
-        # P5: 瞄准点 Kalman 平滑
-        self.smoother = AimSmoother(
-            process_noise=getattr(config, "smooth_process_noise", 0.1),
-            measurement_noise=getattr(config, "smooth_measurement_noise", 1.0),
-            hold_frames=getattr(config, "smooth_hold_frames", 5),
-        )
+        # P5: 当前仍保留已有 Kalman，Step 5 先诊断再决定是否替换
+        self.smoother = AimSmoother(hold_frames=config.smoothing.hold_frames)
 
-        # FPS 速度控制器（可选）
+        # FPS 速度控制器（可选；Step 6 会接入 near_radius/near_speed_scale）
         self.controller: FpsController | None = None
         if use_controller:
             self.controller = FpsController(
-                speed=getattr(config, "control_speed", 100.0),
-                acceleration=getattr(config, "control_acceleration", 0.3),
-                deadzone=getattr(config, "control_deadzone", 2.0),
+                speed=config.control.speed,
+                acceleration=config.control.acceleration,
+                deadzone=config.control.deadzone,
             )
 
         # 最近一次 process 的中间状态（供诊断日志读取）

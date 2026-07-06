@@ -33,8 +33,8 @@ class MemoryCapture:
 class VideoFileCapture:
     """真实视频文件输入源，读取视频帧并裁切 ROI 区域。
 
-    ROI 以视频画面中心为基准，裁切 config.image_width × config.image_height 的区域。
-    裁切后的画面中心即准星默认位置。
+    ROI 以视频画面中心为基准，裁切 config.capture.image_width ×
+    config.capture.image_height 的区域。裁切后的画面中心即准星默认位置。
     """
 
     def __init__(self, video_path: str | Path, config: Optional[Config] = None) -> None:
@@ -56,8 +56,8 @@ class VideoFileCapture:
 
         # 计算 ROI 裁切参数（以画面中心为基准）
         if config is not None:
-            self._roi_w = min(config.image_width, self.video_width)
-            self._roi_h = min(config.image_height, self.video_height)
+            self._roi_w = min(config.capture.image_width, self.video_width)
+            self._roi_h = min(config.capture.image_height, self.video_height)
         else:
             # 没有 config 时不裁切，输出原始尺寸
             self._roi_w = self.video_width
@@ -109,8 +109,8 @@ class ScreenCapture:
         screen_h = monitor["height"]
 
         # ROI 裁切参数（以屏幕中心为基准）
-        roi_w = min(config.image_width, screen_w)
-        roi_h = min(config.image_height, screen_h)
+        roi_w = min(config.capture.image_width, screen_w)
+        roi_h = min(config.capture.image_height, screen_h)
         self._roi = {
             "left": (screen_w - roi_w) // 2,
             "top": (screen_h - roi_h) // 2,

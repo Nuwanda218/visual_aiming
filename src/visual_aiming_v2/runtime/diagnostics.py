@@ -11,8 +11,8 @@ class DiagnosticLogger:
     """可选的诊断日志器，按帧打印各层输入输出。"""
 
     def __init__(self, total_frames: int = 0, source_name: str = "video") -> None:
-        self.total_frames = total_frames  # 总帧数（0 表示未知）
-        self.source_name = source_name    # 数据源名称
+        self.total_frames = total_frames
+        self.source_name = source_name
 
     def log_frame(
         self,
@@ -27,12 +27,14 @@ class DiagnosticLogger:
         command: Command,
         output_name: str,
         pipeline_ms: float,
+        tracker_info: Optional[dict] = None,
+        raw_aim: Optional[tuple[int, int]] = None,
+        smoothed_aim: Optional[tuple[int, int]] = None,
     ) -> None:
         """格式化并打印一帧的完整诊断信息。"""
-        # diagnostics 只观察数据，不反向影响 pipeline 的决策结果。
         lines: list[str] = []
 
-        # 帧头（双线框）
+        # 帧头
         lines.append("")
         lines.append(self._frame_header(frame.sequence, frame.timestamp, pipeline_ms))
 
@@ -63,14 +65,35 @@ class DiagnosticLogger:
         lines.append("")
         lines.append("  actuation ────────────────────────────────────────────────────")
         lines.append(f"    INPUT   detections={len(detections)}  crosshair={crosshair}")
+
+        # P6: 目标追踪状态
+        if tracker_info is not None:
+            if tracker_info["has_lock"]:
+                lines.append(f"    TRACK   locked={tracker_info['locked_frames']}帧  status=保持")
+            else:
+                lines.append(f"    TRACK   未锁定")
+
+        # 目标选择
         if selected is not None and selected_index is not None:
             sx, sy = selected.center
             dist_str = f"{selected_distance:.1f}px" if selected_distance is not None else "?"
             lines.append(f"    SELECT  #{selected_index} {selected.label}  center=({sx},{sy})  distance={dist_str}")
-            dx, dy = command.dx, command.dy
-            lines.append(f"    AIM     target=({sx},{sy}) - crosshair={crosshair} = error({dx}, {dy})")
         else:
             lines.append("    SELECT  None（无目标）")
+
+        # P5: 瞄准点平滑状态
+        if raw_aim is not None or smoothed_aim is not None:
+            raw_str = f"({raw_aim[0]},{raw_aim[1]})" if raw_aim else "None"
+            smooth_str = f"({smoothed_aim[0]},{smoothed_aim[1]})" if smoothed_aim else "None"
+            if raw_aim and smoothed_aim:
+                dx = smoothed_aim[0] - raw_aim[0]
+                dy = smoothed_aim[1] - raw_aim[1]
+                lines.append(f"    AIM     raw={raw_str}  smoothed={smooth_str}  Δ=({dx},{dy})")
+            else:
+                lines.append(f"    AIM     raw={raw_str}  smoothed={smooth_str}")
+        elif smoothed_aim is not None:
+            lines.append(f"    AIM     smoothed=({smoothed_aim[0]},{smoothed_aim[1]})  hold预测中")
+
         lines.append(f"    OUTPUT  Command(dx={command.dx}, dy={command.dy}, mode={command.mode}, reason={command.reason})")
         lines.append("")
         lines.append(f"        ▼ Command(dx={command.dx}, dy={command.dy})")

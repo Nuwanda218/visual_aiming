@@ -97,19 +97,26 @@ class Actuator:
                 deadzone=getattr(config, "control_deadzone", 2.0),
             )
 
+        # 最近一次 process 的中间状态（供诊断日志读取）
+        self.last_raw_aim: Optional[Point] = None
+        self.last_smoothed_aim: Optional[Point] = None
+
     def process(self, detections: Sequence[Detection]) -> Command:
         # P6: 目标锁定（只在目标消失时被动切换）
         select_fn = lambda dets, ch: select_target(dets, ch, self.head_label, self.person_label)
         selected = self.tracker.update(detections, self.crosshair, select_fn)
 
         if selected is not None:
-            # 计算原始瞄准点（带偏置）
             raw_aim = compute_aim_point(selected, self.head_label, self.head_bias, self.body_bias)
         else:
             raw_aim = None
 
         # P5: Kalman 平滑（目标丢失时 hold 预测）
         smoothed_aim = self.smoother.smooth(raw_aim)
+
+        # 记录中间状态（供诊断日志读取）
+        self.last_raw_aim = raw_aim
+        self.last_smoothed_aim = smoothed_aim
 
         if smoothed_aim is None:
             if self.controller is not None:

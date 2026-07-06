@@ -17,30 +17,23 @@ class Pipeline:
         detector: DetectorPort,
         actuator: ActuationPort,
         output: OutputPort,
-        diagnostics=None,  # 可选的 DiagnosticLogger 实例
+        diagnostics=None,
     ) -> None:
-        # 这里依赖的是 shared.ports 里的协议，因此测试替身和真实组件可互换。
         self.detector = detector
         self.actuator = actuator
         self.output = output
-        self.diagnostics = diagnostics  # 为 None 时不输出诊断日志
+        self.diagnostics = diagnostics
 
     def tick(self, frame: Frame) -> TickResult:
-        """处理一帧：detect → select → aim → command → output。"""
+        """处理一帧：detect → track → aim → smooth → control → output。"""
         started = time.perf_counter()
 
-        # perception 层：检测
         detections = list(self.detector.detect(frame.image))
-
-        # actuation 层：选目标 + 算指令
         command = self.actuator.process(detections)
-
-        # output 层：执行指令
         self.output.apply(command)
 
         pipeline_ms = (time.perf_counter() - started) * 1000.0
 
-        # 构建 TickResult
         selected = self._find_selected(detections, command)
         result = TickResult(
             frame=frame,
@@ -49,38 +42,28 @@ class Pipeline:
             command=command,
         )
 
-        # 诊断日志输出（可选）
         if self.diagnostics is not None:
             self._emit_diagnostics(frame, detections, selected, command, pipeline_ms)
 
         return result
 
     def _find_selected(self, detections: list[Detection], command) -> Optional[Detection]:
-        """根据 actuation 的 crosshair 反推被选中的目标（用于诊断和可视化）。"""
-        if not detections:
-            return None
-        # no_target 时确实没选中
-        if command.reason == "no_target":
+        """根据 actuation 的 tracker 获取当前锁定目标。"""
+        tracker = getattr(self.actuator, "tracker", None)
+        if tracker is not None and tracker.locked_target is not None:
+            return tracker.locked_target
+        if not detections or command.reason == "no_target":
             return None
         crosshair = getattr(self.actuator, "crosshair", None)
         if crosshair is None:
             return detections[0] if detections else None
-        # 选距离 crosshair 最近的（与 actuation 逻辑一致）
         cx, cy = crosshair
         return min(detections, key=lambda d: math.hypot(d.center[0] - cx, d.center[1] - cy))
 
-    def _emit_diagnostics(
-        self,
-        frame: Frame,
-        detections: list[Detection],
-        selected: Optional[Detection],
-        command,
-        pipeline_ms: float,
-    ) -> None:
-        """收集各层数据，交给诊断日志器格式化输出。"""
+    def _emit_diagnostics(self, frame, detections, selected, command, pipeline_ms):
+        """收集各层数据（含 P5/P6 中间状态），交给诊断日志器。"""
         crosshair = getattr(self.actuator, "crosshair", (0, 0))
 
-        # 计算选中目标的索引和距离
         selected_index = None
         selected_distance = None
         if selected is not None:
@@ -92,16 +75,22 @@ class Pipeline:
             cx, cy = crosshair
             selected_distance = math.hypot(sx - cx, sy - cy)
 
-        # 获取图像形状
         image = frame.image
-        if hasattr(image, "shape"):
-            # OpenCV/numpy 图像通常带 shape: (height, width, channels)。
-            image_shape = image.shape
-        else:
-            image_shape = (0, 0, 0)
+        image_shape = image.shape if hasattr(image, "shape") else (0, 0, 0)
+        output_name = type(self.output).__name__
 
-        # 获取输出后端名称
-        output_name = getattr(self.output, "__class__", type(self.output)).__name__
+        # P6 追踪状态
+        tracker = getattr(self.actuator, "tracker", None)
+        tracker_info = None
+        if tracker is not None:
+            tracker_info = {
+                "locked_frames": tracker.locked_frames,
+                "has_lock": tracker.locked_target is not None,
+            }
+
+        # P5 平滑状态
+        raw_aim = getattr(self.actuator, "last_raw_aim", None)
+        smoothed_aim = getattr(self.actuator, "last_smoothed_aim", None)
 
         self.diagnostics.log_frame(
             frame=frame,
@@ -114,4 +103,7 @@ class Pipeline:
             command=command,
             output_name=output_name,
             pipeline_ms=pipeline_ms,
+            tracker_info=tracker_info,
+            raw_aim=raw_aim,
+            smoothed_aim=smoothed_aim,
         )

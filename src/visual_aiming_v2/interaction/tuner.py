@@ -210,6 +210,14 @@ class V2ConfigTuner(CaptureTuner):
         5: ("Runtime", [
             ("Detect FPS", "runtime.detect_fps", 1, 120, 1.0, 0),
         ]),
+        6: ("Perception", [
+            ("Confidence x100", "perception.confidence", 1, 100, 100.0, 0),
+            ("IOU x100", "perception.iou", 1, 100, 100.0, 0),
+        ]),
+        7: ("Targeting", [
+            ("Head Bias x100", "targeting.head_bias", 1, 100, 100.0, 0),
+            ("Body Bias x100", "targeting.body_bias", 1, 100, 100.0, 0),
+        ]),
     }
 
     def __init__(self, video_path: str, config_path: str = "config.v2.json") -> None:
@@ -220,7 +228,7 @@ class V2ConfigTuner(CaptureTuner):
         cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_NORMAL)
         self._create_page_trackbars()
         self._read_frame(0)
-        print("[V2 Config Tuner] 1-5 切换页 | S 保存 | R 恢复 | Q/ESC 退出")
+        print("[V2 Config Tuner] 1-7 切换页 | S 保存 | R 恢复 | Q/ESC 退出")
         while True:
             self._render_config_page()
             key = cv2.waitKeyEx(30)
@@ -232,9 +240,11 @@ class V2ConfigTuner(CaptureTuner):
             elif key in (ord("r"), ord("R")):
                 self.state.reset()
                 self._create_page_trackbars()
-            elif key in (ord("1"), ord("2"), ord("3"), ord("4"), ord("5")):
-                self._page = int(chr(key))
-                self._create_page_trackbars()
+            elif ord("1") <= key <= ord("7"):
+                page = int(chr(key))
+                if page in self.PAGES:
+                    self._page = page
+                    self._create_page_trackbars()
             if cv2.getWindowProperty(self.WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1:
                 break
         self.capture.release()

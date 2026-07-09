@@ -1,113 +1,138 @@
-# V2 配置参数手册
+# V2 Configuration Parameters Reference
 
-## capture — 图像获取层
+All parameters live in `config.v2.json`, organized by architectural layer.
 
-| 参数 | 类型 | 默认值 | 说明 | 影响 |
-|------|------|--------|------|------|
-| `image_width` | int | 410 | ROI 裁切宽度（像素） | 越大覆盖范围越广，但 YOLO 输入也越大，推理变慢 |
-| `image_height` | int | 315 | ROI 裁切高度（像素） | 同上。一般保持 4:3 或 16:9 比例 |
-| `crosshair_offset_x` | int | 0 | 准星水平偏移（相对 ROI 中心） | 非零时准星偏离画面中心。用于补偿游戏内准星偏移 |
-| `crosshair_offset_y` | int | 0 | 准星垂直偏移（相对 ROI 中心） | 同上。正值下移，负值上移 |
+## Quick tuning guide
 
-**调参指南：** 先用 `--tune capture` 在全屏视频上拖动滑块，使 ROI 框覆盖游戏画面中需要检测的区域。一般设为游戏分辨率的约 1/4~1/3。
-
----
-
-## perception — 视觉感知层
-
-| 参数 | 类型 | 默认值 | 说明 | 影响 |
-|------|------|--------|------|------|
-| `model_path` | str | `models/best.pt` | YOLO 模型文件路径 | 换更大的模型（如 yolov8s.pt）精度更高但推理更慢 |
-| `confidence` | float | 0.5 | YOLO 置信度阈值 | 越低越容易检测到目标，但误检也更多。调高可以过滤不可靠的检测 |
-| `iou` | float | 0.45 | NMS 交并比阈值 | 控制重叠框的合并强度。越低合并越激进，同一目标出现多个框时调低 |
-| `device` | str | `auto` | 推理设备 | `auto` 优先 CUDA，`cpu` 强制 CPU，`cuda:0` 指定 GPU |
-
-**调参指南：** 如果有很多误检（凭空出现的目标），调高 `confidence`。如果同一目标有多个重叠框，调低 `iou`。
+| Problem | Fix |
+|---------|-----|
+| Overshooting target (crosshair goes past) | Increase `control.near_radius`, decrease `control.near_speed_scale` |
+| Can't keep up with moving target | Increase `control.speed` |
+| Aim shakes when crosshair on target | Increase `control.deadzone`, increase `smoothing.jitter_radius` |
+| Losing target lock too easily | Increase `tracker.match_distance_ratio`, increase `tracker.lost_frame_grace` |
+| Target lock jumps between enemies | Decrease `tracker.match_distance_ratio` |
+| Too many false detections | Increase `perception.confidence` |
+| Mouse feels laggy / unresponsive | Increase `control.acceleration`, increase `runtime.detect_fps` |
+| Aim point too high on head box | Increase `targeting.head_bias` |
+| Aim point too high on person box | Increase `targeting.body_bias` |
 
 ---
 
-## actuation → targeting — 目标类别与瞄点偏置
+## capture — Image capture
 
-| 参数 | 类型 | 默认值 | 说明 | 影响 |
-|------|------|--------|------|------|
-| `head_label` | str | `head` | head 类别标签名 | 与 YOLO 模型训练时的类别名一致 |
-| `person_label` | str | `person` | person 类别标签名 | 同上 |
-| `head_bias` | float | 0.35 | head 框的瞄准点偏置 | 0=框顶部，0.5=框中心，1=框底部。head 框通常偏上（颈部位置） |
-| `body_bias` | float | 0.25 | person 框的瞄准点偏置 | person 框顶部偏下估算头部位置 |
+| Param | Type | Default | Range | Description |
+|-------|------|---------|-------|-------------|
+| `image_width` | int | 410 | 100-1000 | ROI crop width in pixels. Larger = wider coverage but more GPU work. |
+| `image_height` | int | 315 | 100-1000 | ROI crop height. Keep 4:3 or 16:9 aspect ratio. |
+| `crosshair_offset_x` | int | 0 | -200..200 | Horizontal crosshair offset from ROI center. Positive = right. |
+| `crosshair_offset_y` | int | 0 | -200..200 | Vertical crosshair offset from ROI center. Negative = up. |
 
-**调参指南：** 如果瞄准点相对目标头部偏上/偏下，微调这两个 bias。增大值下移瞄准点，减小值上移。
-
----
-
-## actuation → tracker — 目标锁定
-
-tracker 通过比较前后帧检测框的大小和位置来判断"这是不是同一个人"，从而锁定目标。
-
-| 参数 | 类型 | 默认值 | 说明 | 影响 |
-|------|------|--------|------|------|
-| `match_distance_ratio` | float | 0.75 | 框匹配距离比 | 两帧之间目标中心移动距离 / 框对角线长度。越小要求匹配越严格 |
-| `min_match_distance` | float | 18.0 | 最小匹配距离（像素） | 中心距离小于此值直接判定匹配 |
-| `size_ratio_min` | float | 0.55 | 框大小比下限 | 新框面积 / 旧框面积不低于此值才算匹配 |
-| `size_ratio_max` | float | 1.8 | 框大小比上限 | 新框面积 / 旧框面积不高于此值才算匹配 |
-| `lost_frame_grace` | int | 2 | 丢失宽容帧数 | 目标短暂消失多少帧内仍认为锁定有效，超过后释放锁定 |
-
-**调参指南：**
-- **多目标抢准星** → 调大 `match_distance_ratio`（放宽匹配条件，更不容易丢失锁定）
-- **目标锁定后跟丢太快** → 调大 `lost_frame_grace`（给更多帧的宽容）
-- **锁定到了错误的目标** → 调小 `match_distance_ratio` 或收紧 `size_ratio_min/max`
+Use `--tune capture` to visually adjust these with a real-time preview.
 
 ---
 
-## actuation → smoothing — 瞄准点平滑
+## perception — YOLO detector
 
-使用 EMA（指数移动平均）滤波器消除帧间检测框抖动。
-
-| 参数 | 类型 | 默认值 | 说明 | 影响 |
-|------|------|--------|------|------|
-| `enabled` | bool | True | 是否启用平滑 | 关闭后瞄准点使用原始值 |
-| `alpha` | float | 0.55 | EMA 平滑系数 | 0→完全不跟手（极平滑），1→完全跟手（不平滑）。0.3~0.7 是合理范围 |
-| `jitter_radius` | float | 2.0 | 抖动过滤半径（像素） | 瞄准点变化小于此值视为抖动，不完全跟随 |
-| `stable_frames` | int | 2 | 稳定帧数 | 连续多少帧抖动在半径内才认为目标静止，之后进一步强化平滑 |
-| `hold_frames` | int | 3 | 丢失后保持帧数 | 目标丢失后继续用最后位置预测的帧数 |
-
-**调参指南：**
-- **静止目标仍抖动** → 调大 `alpha`（更信任观测）或调大 `jitter_radius`
-- **目标移动时跟不上去** → 调小 `alpha`（更信任预测）
-- **目标短暂消失后准星乱飘** → 调大 `hold_frames`
+| Param | Type | Default | Range | Description |
+|-------|------|---------|-------|-------------|
+| `model_path` | str | `models/best.pt` | - | Path to YOLO model. bigger models (yolov8s.pt) = better accuracy, slower. |
+| `confidence` | float | 0.5 | 0.05-0.95 | Minimum confidence for a detection. Raise to filter out false positives. |
+| `iou` | float | 0.45 | 0.1-0.9 | NMS IOU threshold for merging overlapping boxes. Lower = merge more aggressively. |
+| `device` | str | `auto` | - | `auto` = prefer CUDA, `cpu`, `cuda:0`. |
 
 ---
 
-## actuation → control — 鼠标速度控制
+## actuation — targeting (aim point bias)
 
-FPS 风格速度控制器：误差越大移动越快，接近目标时自动减速。
-
-| 参数 | 类型 | 默认值 | 说明 | 影响 |
-|------|------|--------|------|------|
-| `speed` | float | 180.0 | 基础移动速度 | 影响远距离时的鼠标移动速度，越大越快 |
-| `acceleration` | float | 0.45 | 速度追随系数 | 0→速度变化极慢（平滑），1→瞬间响应（跟手）。0.2~0.6 是合理范围 |
-| `deadzone` | float | 3.0 | 误差死区（像素） | 瞄准点与准星距离小于此值不再移动，防止微振 |
-| `near_radius` | float | 80.0 | 减速半径（像素） | 距离小于此值时开始减速 |
-| `near_speed_scale` | float | 0.35 | 近距离速度比例 | 近距离时的速度倍数，越小越稳 |
-
-**调参指南：**
-- **鼠标跟不上移动目标** → 调大 `speed`
-- **鼠标移动太生硬** → 调小 `acceleration`（更平滑）
-- **瞄准后鼠标来回微振** → 调大 `deadzone`
-- **靠近目标时冲过头** → 调大 `near_radius` 或调小 `near_speed_scale`
-- **靠近目标时太慢跟不上** → 调大 `near_speed_scale`
+| Param | Type | Default | Range | Description |
+|-------|------|---------|-------|-------------|
+| `head_label` | str | `head` | - | YOLO class label for head detection. Must match model's class names. |
+| `person_label` | str | `person` | - | YOLO class label for person detection. |
+| `head_bias` | float | 0.35 | 0-1.0 | Vertical aim point on head box: 0=top edge, 0.5=center. Raise if shooting too high. |
+| `body_bias` | float | 0.25 | 0-1.0 | Vertical aim point on person box: 0=top edge. Raise if shooting too high. |
 
 ---
 
-## runtime — 运行编排层
+## actuation — tracker (target lock)
 
-| 参数 | 类型 | 默认值 | 说明 | 影响 |
-|------|------|--------|------|------|
-| `detect_fps` | float | 30.0 | 检测频率 | YOLO 每秒推理次数。越高反应越快，GPU 占用越高。30 是平衡值 |
+Logic: compares consecutive detection boxes by center distance and size ratio.
+Once locked on a target, it stays locked until the target disappears. It does NOT actively switch to a closer target.
+
+| Param | Type | Default | Range | Description |
+|-------|------|---------|-------|-------------|
+| `match_distance_ratio` | float | 0.75 | 0.3-2.0 | Max allowed center move distance / box diagonal between frames to still be same target. Higher = looser matching. Increase if losing lock when target moves fast. |
+| `min_match_distance` | float | 18.0 | 1-100 | If center moves less than this in pixels, always consider same target regardless of ratio. |
+| `size_ratio_min` | float | 0.55 | 0.2-1.0 | Min new/old box area ratio. Below this = not the same target. |
+| `size_ratio_max` | float | 1.8 | 1.0-3.0 | Max new/old box area ratio. Above this = not the same target. |
+| `lost_frame_grace` | int | 2 | 0-10 | Keep the lock for N frames after target disappears from detection. Increase if target frequently lost and reacquired. |
 
 ---
 
-## output — 输出层
+## actuation — smoothing (aim point filter)
 
-| 参数 | 类型 | 默认值 | 说明 | 影响 |
-|------|------|--------|------|------|
-| `backend` | str | `null` | 输出后端 | `null`=不输出，`log`=内存记录，`mouse`=真实鼠标移动 |
+Uses Exponential Moving Average (EMA) to smooth aim point across frames, reducing jitter from detection box size variations.
+
+| Param | Type | Default | Range | Description |
+|-------|------|---------|-------|-------------|
+| `enabled` | bool | true | - | Enable/disable aim point smoothing. |
+| `alpha` | float | 0.55 | 0.05-0.95 | EMA coefficient: 0 = fully smooth/unresponsive, 1 = raw/no smoothing. Decrease if aim shakes when idle. Increase if aim lags behind moving target. |
+| `jitter_radius` | float | 2.0 | 0-20 | Aim point changes smaller than this are treated as jitter and suppressed. Increase if stationary target causes aim shake. |
+| `stable_frames` | int | 2 | 1-10 | Consecutive frames below jitter_radius before heavy smoothing activates. |
+| `hold_frames` | int | 3 | 0-20 | Continue predicting aim position for N frames after target lost. |
+
+---
+
+## actuation — control (mouse movement)
+
+FPS-style velocity controller: farther error = faster movement, decelerates when close.
+Output goes through FpsController -> output_scale -> SendInput.
+
+| Param | Type | Default | Range | Description |
+|-------|------|---------|-------|-------------|
+| `speed` | float | 180.0 | 20-500 | Base movement speed. Higher = faster mouse. Increase if can't keep up with moving target. |
+| `acceleration` | float | 0.45 | 0.05-0.95 | Velocity smoothing factor. 0 = slow smooth response, 1 = instant response. Lower = smoother but feels laggy. |
+| `deadzone` | float | 3.0 | 0-15 | Stop all output when aim error < deadzone pixels. Increase if aim oscillates near target. |
+| `near_radius` | float | 80.0 | 10-300 | Start decelerating within this distance from target. **Increase if overshooting.** |
+| `near_speed_scale` | float | 0.35 | 0.01-1.0 | Speed multiplier when inside near_radius. **Decrease if overshooting (try 0.05-0.10).** |
+| `output_scale` | float | 1.0 | 0.1-3.0 | Final output multiplier. Use calibration tool to match your game sensitivity. |
+
+### How the velocity controller works
+
+```
+Error (pixels from crosshair to aim point)
+    |
+    --> If error < deadzone: STOP
+    |
+    --> Target speed = error * speed_gain (clamped to speed)
+    --> If error < near_radius: target speed *= near_speed_scale
+    |
+    --> Smooth velocity toward target speed (acceleration factor)
+    |
+    --> If error < speed*3: apply deceleration brake
+    |
+    --> Output dx,dy (raw mouse units via SendInput)
+```
+
+### Calibrating output_scale
+
+Run `python scripts/test_mouse_calibrate.py` to send a known dx (default 100).
+Measure how many pixels your crosshair moved in-game.
+`output_scale = in_game_pixels / 100`
+
+---
+
+## runtime — Loop control
+
+| Param | Type | Default | Range | Description |
+|-------|------|---------|-------|-------------|
+| `detect_fps` | float | 30.0 | 5-120 | YOLO detection rate. Higher = lower reaction latency, more GPU load. 30 is a good balance. |
+
+---
+
+## output — Output backend
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `backend` | str | `null` | `null` = no output, `log` = record commands in memory, `mouse` = real mouse via SendInput. |
+
+The `backend` field is set by CLI `--output` argument, not directly in config.

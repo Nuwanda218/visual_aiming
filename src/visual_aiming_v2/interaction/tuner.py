@@ -175,9 +175,14 @@ class CaptureTuner:
 
 
 class V2ConfigTuner(CaptureTuner):
-    """精简 V2 配置调参窗口：按页暴露少量有效参数。"""
+    """V2 配置调参窗口：标签页式切换，点击标签按钮即可切换参数页。"""
 
     WINDOW_NAME = "V2 Config Tuner"
+
+    TAB_HEIGHT = 40        # 标签栏高度
+    TAB_WIDTH = 110        # 每个标签宽度
+    TAB_GAP = 4            # 标签间距
+    TAB_BAR_Y = 4          # 标签栏顶部
 
     PAGES = {
         1: ("Capture", [
@@ -223,12 +228,16 @@ class V2ConfigTuner(CaptureTuner):
     def __init__(self, video_path: str, config_path: str = "config.v2.json") -> None:
         super().__init__(video_path, config_path)
         self._page = 1
+        self._tab_rects: list[tuple[int, int, int, int]] = []  # 各标签的 (x1,y1,x2,y2)
 
     def run(self) -> None:
         cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(self.WINDOW_NAME, 900, 650)
+        cv2.setMouseCallback(self.WINDOW_NAME, self._on_mouse)
         self._create_page_trackbars()
         self._read_frame(0)
-        print("[V2 Config Tuner] 1-7 切换页 | S 保存 | R 恢复 | Q/ESC 退出")
+        print("[V2 Config Tuner] 点击标签切换 | S=保存 | R=恢复 | Q=退出")
+
         while True:
             self._render_config_page()
             key = cv2.waitKeyEx(30)
@@ -240,19 +249,28 @@ class V2ConfigTuner(CaptureTuner):
             elif key in (ord("r"), ord("R")):
                 self.state.reset()
                 self._create_page_trackbars()
-            elif ord("1") <= key <= ord("7"):
-                page = int(chr(key))
-                if page in self.PAGES:
-                    self._page = page
-                    self._create_page_trackbars()
             if cv2.getWindowProperty(self.WINDOW_NAME, cv2.WND_PROP_VISIBLE) < 1:
                 break
         self.capture.release()
         cv2.destroyAllWindows()
 
+    def _on_mouse(self, event, x, y, flags, param) -> None:
+        """鼠标点击标签按钮时切换页面。"""
+        if event != cv2.EVENT_LBUTTONDOWN:
+            return
+        for page, (x1, y1, x2, y2) in self._tab_rects:
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                if page != self._page and page in self.PAGES:
+                    self._page = page
+                    self._create_page_trackbars()
+                return
+
     def _create_page_trackbars(self) -> None:
+        """销毁旧 trackbar 并重建当前页的 trackbar。"""
         cv2.destroyWindow(self.WINDOW_NAME)
         cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(self.WINDOW_NAME, 900, 650)
+        cv2.setMouseCallback(self.WINDOW_NAME, self._on_mouse)
         for name, path, min_value, max_value, scale, offset in self.PAGES[self._page][1]:
             raw = self.state.get_value(path)
             if isinstance(raw, bool):
@@ -260,7 +278,8 @@ class V2ConfigTuner(CaptureTuner):
             else:
                 pos = int(round(float(raw) * scale + offset))
             pos = max(0, min(int(max_value - min_value), pos - int(min_value)))
-            cv2.createTrackbar(name, self.WINDOW_NAME, pos, int(max_value - min_value), self._trackbar_callback(path, min_value, scale, offset))
+            cb = self._trackbar_callback(path, min_value, scale, offset)
+            cv2.createTrackbar(name, self.WINDOW_NAME, pos, int(max_value - min_value), cb)
 
     def _trackbar_callback(self, path: str, min_value: float, scale: float, offset: float):
         def callback(pos: int) -> None:
@@ -269,15 +288,51 @@ class V2ConfigTuner(CaptureTuner):
         return callback
 
     def _render_config_page(self) -> None:
+        """在视频预览上叠加标签栏和当前参数值。"""
         if self._current_frame is None:
             return
         display = self._current_frame.copy()
-        title, items = self.PAGES[self._page]
-        lines = [f"Page {self._page}: {title}"]
+
+        # 标签栏背景（半透明叠加在视频顶部）
+        overlay = display.copy()
+        cv2.rectangle(overlay, (0, 0), (display.shape[1], self.TAB_HEIGHT + 8), (35, 35, 35), -1)
+        cv2.addWeighted(overlay, 0.85, display, 0.15, 0, display)
+
+        self._tab_rects = []
+        x = 8
+        for page_id in sorted(self.PAGES.keys()):
+            title, _items = self.PAGES[page_id]
+            if page_id == self._page:
+                bg = (60, 130, 60)
+                fg = (255, 255, 255)
+            else:
+                bg = (55, 55, 55)
+                fg = (170, 170, 170)
+            cv2.rectangle(display, (x, self.TAB_BAR_Y), (x + self.TAB_WIDTH, self.TAB_BAR_Y + self.TAB_HEIGHT), bg, -1)
+            cv2.rectangle(display, (x, self.TAB_BAR_Y), (x + self.TAB_WIDTH, self.TAB_BAR_Y + self.TAB_HEIGHT), (90, 90, 90), 1)
+            ts = cv2.getTextSize(title, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+            cv2.putText(display, title, (x + (self.TAB_WIDTH - ts[0]) // 2, self.TAB_BAR_Y + (self.TAB_HEIGHT + ts[1]) // 2),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, fg, 1, cv2.LINE_AA)
+            self._tab_rects.append((page_id, (x, self.TAB_BAR_Y, x + self.TAB_WIDTH, self.TAB_BAR_Y + self.TAB_HEIGHT)))
+            x += self.TAB_WIDTH + self.TAB_GAP
+
+        # 参数值
+        _title, items = self.PAGES[self._page]
+        y = self.TAB_BAR_Y + self.TAB_HEIGHT + 16
         for _name, path, _min, _max, _scale, _offset in items:
-            lines.append(f"{path} = {self.state.get_value(path)}")
-        lines.append("1-5=Page  S=Save  R=Reset  Q=Quit")
-        _draw_lines(display, lines)
+            value = self.state.get_value(path)
+            val_str = f"{value:.3f}" if isinstance(value, float) else str(value)
+            line = f"  {path} = {val_str}"
+            cv2.putText(display, line, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
+            cv2.putText(display, line, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 255, 200), 1, cv2.LINE_AA)
+            y += 22
+
+        # 底部提示
+        cv2.putText(display, "Click tabs | S=Save  R=Reset  Q=Quit", (8, display.shape[0] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
+        cv2.putText(display, "Click tabs | S=Save  R=Reset  Q=Quit", (8, display.shape[0] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1, cv2.LINE_AA)
+
         cv2.imshow(self.WINDOW_NAME, display)
 
 

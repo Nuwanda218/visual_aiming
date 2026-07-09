@@ -1,0 +1,31 @@
+# ===== V2 命令大全 =====
+
+# 视频回放模式
+python main_v2.py --video test.mp4                              # 基础运行（不输出不显示）
+python main_v2.py --video test.mp4 --max-frames 100             # 限制帧数
+python main_v2.py --video test.mp4 --verbose                    # 终端逐帧日志
+python main_v2.py --video test.mp4 --visual                     # OpenCV 可视化窗口
+python main_v2.py --video test.mp4 --visual --verbose           # 窗口 + 终端日志
+python main_v2.py --video test.mp4 --output log                 # 内存记录指令
+python main_v2.py --video test.mp4 --output mouse               # 真实移动鼠标
+python main_v2.py --video test.mp4 --output mouse --visual      # 移动鼠标 + 可视化
+
+# 实时截屏模式（Shift+右键激活，Ctrl+Q退出）
+python main_v2.py --realtime                                     # 基础实时（不输出）
+python main_v2.py --realtime --output mouse                      # 实时 + 真实鼠标
+python main_v2.py --realtime --output mouse --visual             # 实时 + 鼠标 + 可视化
+python main_v2.py --realtime --visual                            # 实时 + 只看不动
+
+# 调参模式（7 个标签页：画面裁切/鼠标控制/目标锁定/瞄点平滑/运行频率/检测参数/瞄点偏置）
+python main_v2.py --tune config --video test.mp4                  # 全部参数调参窗口
+python main_v2.py --video test.mp4 --tune capture                  # ROI 裁切 + 准星调参
+
+# 鼠标校准工具（测量 SendInput 到游戏像素的映射比率）
+python scripts/test_mouse_calibrate.py                             # 默认 dx=100
+python scripts/test_mouse_calibrate.py 200                         # dx=200
+
+
+# 通用选项（可组合）
+--model custom.pt                                                # 指定 YOLO 模型
+--config other.json                                              # 指定配置文件
+--max-frames 300                                                 # 限制处理帧数（视频模式）

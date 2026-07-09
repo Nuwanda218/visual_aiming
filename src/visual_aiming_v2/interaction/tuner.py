@@ -179,50 +179,76 @@ class V2ConfigTuner(CaptureTuner):
 
     WINDOW_NAME = "V2 Config Tuner"
 
-    TAB_HEIGHT = 40        # 标签栏高度
-    TAB_WIDTH = 110        # 每个标签宽度
-    TAB_GAP = 4            # 标签间距
-    TAB_BAR_Y = 4          # 标签栏顶部
+    TAB_HEIGHT = 40
+    TAB_WIDTH = 120        # 中文标签更宽
+    TAB_GAP = 4
+    TAB_BAR_Y = 4
 
+    # (显示名, 配置路径, 最小值, 最大值, 缩放, 偏移, 效果说明)
     PAGES = {
-        1: ("Capture", [
-            ("ROI W", "capture.image_width", 100, 1000, 1.0, 0),
-            ("ROI H", "capture.image_height", 100, 1000, 1.0, 0),
-            ("Cross X", "capture.crosshair_offset_x", -200, 200, 1.0, 200),
-            ("Cross Y", "capture.crosshair_offset_y", -200, 200, 1.0, 200),
+        1: ("画面裁切", [
+            ("裁切宽度", "capture.image_width", 100, 1000, 1.0, 0,
+             "画面裁切宽度，越大覆盖越广但推理越慢"),
+            ("裁切高度", "capture.image_height", 100, 1000, 1.0, 0,
+             "画面裁切高度，一般保持 4:3 比例"),
+            ("准星 X 偏移", "capture.crosshair_offset_x", -200, 200, 1.0, 200,
+             "准星水平偏移，正值右移"),
+            ("准星 Y 偏移", "capture.crosshair_offset_y", -200, 200, 1.0, 200,
+             "准星垂直偏移，正值下移负值上移"),
         ]),
-        2: ("Control", [
-            ("Speed", "control.speed", 1, 500, 1.0, 0),
-            ("Accel x100", "control.acceleration", 1, 100, 100.0, 0),
-            ("Deadzone", "control.deadzone", 0, 20, 1.0, 0),
-            ("Near Radius", "control.near_radius", 1, 300, 1.0, 0),
-            ("Near Scale x100", "control.near_speed_scale", 1, 100, 100.0, 0),
-            ("Output Scale x100", "control.output_scale", 1, 300, 100.0, 0),
+        2: ("鼠标控制", [
+            ("移动速度", "control.speed", 1, 500, 1.0, 0,
+             "基础移动速度，跟不上目标就调大"),
+            ("平滑度 x100", "control.acceleration", 1, 100, 100.0, 0,
+             "速度平滑系数，越小越平滑，越大越跟手"),
+            ("死区", "control.deadzone", 0, 20, 1.0, 0,
+             "误差小于此值不移动，微振就调大"),
+            ("减速半径", "control.near_radius", 1, 300, 1.0, 0,
+             "进入此距离开始减速，过冲就调大"),
+            ("近距速度比例 x100", "control.near_speed_scale", 1, 100, 100.0, 0,
+             "靠近目标时的速度比例，过冲就调小"),
+            ("输出倍率 x100", "control.output_scale", 1, 300, 100.0, 0,
+             "最终输出缩放，匹配游戏灵敏度"),
         ]),
-        3: ("Tracker", [
-            ("Match Ratio x100", "tracker.match_distance_ratio", 1, 200, 100.0, 0),
-            ("Min Dist", "tracker.min_match_distance", 1, 100, 1.0, 0),
-            ("Size Min x100", "tracker.size_ratio_min", 1, 200, 100.0, 0),
-            ("Size Max x100", "tracker.size_ratio_max", 1, 300, 100.0, 0),
-            ("Lost Grace", "tracker.lost_frame_grace", 0, 10, 1.0, 0),
+        3: ("目标锁定", [
+            ("匹配距离比 x100", "tracker.match_distance_ratio", 1, 200, 100.0, 0,
+             "两帧间目标中心允许移动的最大比例，抢准星就调大"),
+            ("最小匹配距离", "tracker.min_match_distance", 1, 100, 1.0, 0,
+             "移动小于此值直接判定为同一目标"),
+            ("框大小比下限 x100", "tracker.size_ratio_min", 1, 200, 100.0, 0,
+             "新框/旧框面积比下限，低于此值认为不同目标"),
+            ("框大小比上限 x100", "tracker.size_ratio_max", 1, 300, 100.0, 0,
+             "新框/旧框面积比上限，高于此值认为不同目标"),
+            ("丢失宽容帧", "tracker.lost_frame_grace", 0, 10, 1.0, 0,
+             "目标暂时消失多少帧仍保持锁定，跟丢快就调大"),
         ]),
-        4: ("Smoothing", [
-            ("Enabled", "smoothing.enabled", 0, 1, 1.0, 0),
-            ("Alpha x100", "smoothing.alpha", 1, 100, 100.0, 0),
-            ("Jitter", "smoothing.jitter_radius", 0, 20, 1.0, 0),
-            ("Stable Frames", "smoothing.stable_frames", 1, 10, 1.0, 0),
-            ("Hold Frames", "smoothing.hold_frames", 0, 20, 1.0, 0),
+        4: ("瞄点平滑", [
+            ("启用平滑", "smoothing.enabled", 0, 1, 1.0, 0,
+             "开启后对瞄准点帧间平滑，消除检测框抖动"),
+            ("平滑系数 x100", "smoothing.alpha", 1, 100, 100.0, 0,
+             "越小越平滑，静止抖动就调小"),
+            ("抖动过滤", "smoothing.jitter_radius", 0, 20, 1.0, 0,
+             "变化小于此值视为抖动忽略，静止抖动就调大"),
+            ("稳定帧数", "smoothing.stable_frames", 1, 10, 1.0, 0,
+             "连续多少帧抖动在半径内认为目标静止"),
+            ("保持帧数", "smoothing.hold_frames", 0, 20, 1.0, 0,
+             "目标丢失后继续预测的帧数"),
         ]),
-        5: ("Runtime", [
-            ("Detect FPS", "runtime.detect_fps", 1, 120, 1.0, 0),
+        5: ("运行频率", [
+            ("检测频率", "runtime.detect_fps", 1, 120, 1.0, 0,
+             "每秒检测次数，越高反应越快 GPU 占用越高"),
         ]),
-        6: ("Perception", [
-            ("Confidence x100", "perception.confidence", 1, 100, 100.0, 0),
-            ("IOU x100", "perception.iou", 1, 100, 100.0, 0),
+        6: ("检测参数", [
+            ("置信度 x100", "perception.confidence", 1, 100, 100.0, 0,
+             "YOLO 置信度阈值，误检多就调高"),
+            ("重叠阈值 x100", "perception.iou", 1, 100, 100.0, 0,
+             "重叠框合并强度，同一目标多个框就调低"),
         ]),
-        7: ("Targeting", [
-            ("Head Bias x100", "targeting.head_bias", 1, 100, 100.0, 0),
-            ("Body Bias x100", "targeting.body_bias", 1, 100, 100.0, 0),
+        7: ("瞄点偏置", [
+            ("头部偏置 x100", "targeting.head_bias", 1, 100, 100.0, 0,
+             "head 框瞄点偏置，0=顶部 0.5=中心，瞄高调大"),
+            ("身体偏置 x100", "targeting.body_bias", 1, 100, 100.0, 0,
+             "person 框瞄点偏置，0=顶部，瞄高调大"),
         ]),
     }
 
@@ -272,7 +298,7 @@ class V2ConfigTuner(CaptureTuner):
         cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(self.WINDOW_NAME, 900, 650)
         cv2.setMouseCallback(self.WINDOW_NAME, self._on_mouse)
-        for name, path, min_value, max_value, scale, offset in self.PAGES[self._page][1]:
+        for (name, path, min_value, max_value, scale, offset, _desc) in self.PAGES[self._page][1]:
             raw = self.state.get_value(path)
             if isinstance(raw, bool):
                 pos = int(raw)
@@ -317,16 +343,19 @@ class V2ConfigTuner(CaptureTuner):
             self._tab_rects.append((page_id, (x, self.TAB_BAR_Y, x + self.TAB_WIDTH, self.TAB_BAR_Y + self.TAB_HEIGHT)))
             x += self.TAB_WIDTH + self.TAB_GAP
 
-        # 参数值
+        # 参数值 + 效果说明
         _title, items = self.PAGES[self._page]
         y = self.TAB_BAR_Y + self.TAB_HEIGHT + 16
-        for _name, path, _min, _max, _scale, _offset in items:
+        for name, path, _min, _max, _scale, _offset, desc in items:
             value = self.state.get_value(path)
             val_str = f"{value:.3f}" if isinstance(value, float) else str(value)
-            line = f"  {path} = {val_str}"
+            line = f"  {name} = {val_str}"
             cv2.putText(display, line, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 0), 3, cv2.LINE_AA)
             cv2.putText(display, line, (8, y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 255, 200), 1, cv2.LINE_AA)
-            y += 22
+            # 效果说明（灰色小字）
+            cv2.putText(display, f"    -> {desc}", (340, y), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 0, 0), 3, cv2.LINE_AA)
+            cv2.putText(display, f"    -> {desc}", (340, y), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (200, 200, 200), 1, cv2.LINE_AA)
+            y += 28
 
         # 底部提示
         cv2.putText(display, "Click tabs | S=Save  R=Reset  Q=Quit", (8, display.shape[0] - 10),

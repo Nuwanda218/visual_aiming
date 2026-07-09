@@ -197,6 +197,7 @@ class V2ConfigTuner(CaptureTuner):
             ("Deadzone", "control.deadzone", 0, 20, 1.0, 0),
             ("Near Radius", "control.near_radius", 1, 300, 1.0, 0),
             ("Near Scale x100", "control.near_speed_scale", 1, 100, 100.0, 0),
+            ("Output Scale x100", "control.output_scale", 1, 300, 100.0, 0),
         ]),
         3: ("Tracker", [
             ("Match Ratio x100", "tracker.match_distance_ratio", 1, 200, 100.0, 0),

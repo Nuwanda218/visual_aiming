@@ -65,6 +65,7 @@ class ControlConfig:
     deadzone: float = 3.0
     near_radius: float = 80.0
     near_speed_scale: float = 0.35
+    output_scale: float = 1.0
 
 
 @dataclass

@@ -103,6 +103,9 @@ class Actuator:
                 near_speed_scale=config.control.near_speed_scale,
             )
 
+        # 输出倍率（匹配游戏鼠标灵敏度）
+        self.output_scale = config.control.output_scale
+
         # 最近一次 process 的中间状态（供诊断日志读取）
         self.last_raw_aim: Optional[Point] = None
         self.last_smoothed_aim: Optional[Point] = None
@@ -142,6 +145,10 @@ class Actuator:
             dx, dy = self.controller.update(float(ex), float(ey))
         else:
             dx, dy = ex, ey
+
+        # 输出倍率（匹配游戏鼠标灵敏度）
+        dx = int(round(dx * self.output_scale))
+        dy = int(round(dy * self.output_scale))
 
         if dx == 0 and dy == 0:
             return Command.noop("on_target")
